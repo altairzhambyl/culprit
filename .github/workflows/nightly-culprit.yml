@@ -1,0 +1,73 @@
+# Example: run Culprit automatically when the nightly evaluation regresses.
+#
+# Add this workflow to an ML repository that has a .culprit.yaml. Every night it evaluates HEAD, appends
+# the result to the metric store (kept in the Actions cache between runs), and calls `culprit watch --once`.
+# When a regression above the threshold appears, Culprit investigates, fixes, verifies, adds a guard test
+# and — because no human can click "approve" inside a CI job — opens the pull request directly with
+# --auto-approve: the pull request review itself becomes the human approval step.
+#
+# Status: EXAMPLE, not executed by the authors (this repository is not itself an ML project). Requires
+# AWS credentials for Bedrock (OIDC role recommended) and a GITHUB_TOKEN with pull-request permissions.
+name: nightly-culprit
+
+on:
+  schedule:
+    - cron: "15 2 * * *"     # 02:15 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-west-2
+      CULPRIT_MODEL_PROVIDER: bedrock
+      CULPRIT_RUNS_DIR: ${{ github.workspace }}/.culprit-runs
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                       # bisection needs the full history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install the project and Culprit
+        run: |
+          pip install -r requirements.txt
+          pip install "culprit @ git+https://github.com/<your-org>/culprit.git"
+      - name: Restore the metric store
+        uses: actions/cache@v4
+        with:
+          path: nightly/metrics_history.json   # must match metrics_history in .culprit.yaml
+          key: culprit-metrics-${{ github.run_id }}
+          restore-keys: culprit-metrics-
+      - name: Nightly evaluation
+        run: culprit record-nightly .
+      - name: Investigate if the metric regressed
+        id: watch
+        run: |
+          set +e
+          culprit watch . --once --auto-approve
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+      - name: Upload investigation artifacts (trace, report, PR body)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: culprit-runs
+          path: .culprit-runs
+          if-no-files-found: ignore
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Culprit nightly" >> "$GITHUB_STEP_SUMMARY"
+          echo "watch exit status: ${{ steps.watch.outputs.status }} (0 = nothing to do / completed, 1 = failed)" >> "$GITHUB_STEP_SUMMARY"
+          for f in .culprit-runs/*/report.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done

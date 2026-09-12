@@ -35,6 +35,7 @@ def test_evaluator_scores_the_churn_golden_path(offline_settings: Settings, tmp_
     v = result["verified"]
     assert v["metric_recovered"] is True and v["tests_pass_on_fix_branch"] is True
     assert v["culprit_file_touched"] is True and result["guard_test_added"] is True
+    assert v["culprit_bracketed_by_experiments"] is True  # the culprit and its parent were both measured
     assert ".culprit-metrics" not in " ".join(v["files_changed"])  # experiment outputs never leak into the PR
     assert result["experiments"] == 5 and result["tool_calls"] > 10
     saved = json.loads((Path(offline_settings.runs_dir) / result["run_id"] / "evaluation.json").read_text())

@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from strands import Agent
+from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.models import Model
 from strands.session.file_session_manager import FileSessionManager
 from strands.tools.executors import SequentialToolExecutor
@@ -13,7 +14,7 @@ from strands.tools.executors import SequentialToolExecutor
 from culprit.agents.prompts import render_system_prompt
 from culprit.agents.scripted_model import GoldenPathPolicy, ScriptedModel
 from culprit.context import InvestigationContext
-from culprit.hooks import ApprovalHook, BudgetHook, TraceHook
+from culprit.hooks import ApprovalHook, BudgetHook, LoopGuardHook, TraceHook
 from culprit.settings import Settings
 from culprit.tools.investigation import InvestigationTools
 
@@ -76,9 +77,16 @@ def build_agent(ctx: InvestigationContext, model: Model | None = None) -> Agent:
         hooks=[
             TraceHook(ctx),
             BudgetHook(ctx, max_experiments=settings.max_experiments),
+            LoopGuardHook(
+                ctx, max_repeats=settings.max_repeated_calls, max_tool_calls=settings.max_tool_calls
+            ),
             ApprovalHook(ctx, guarded_tools=settings.approval_tools, auto_approve=settings.auto_approve),
         ],
         session_manager=session,
+        # An investigation is ~15-40 tool calls (2 messages each). The default 40-message window would drop
+        # the metric history and the task from context mid-run; keep the first message pinned and the
+        # window large. Tool calls are capped separately by the loop guard.
+        conversation_manager=SlidingWindowConversationManager(window_size=200, pin_first=1),
         tool_executor=SequentialToolExecutor(),  # experiments share a git repo; run tools one at a time
         callback_handler=None,  # the trace hook feeds the UI/CLI instead of printing to stdout
         agent_id="culprit-investigator",

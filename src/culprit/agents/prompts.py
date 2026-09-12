@@ -39,7 +39,11 @@ Method (follow it, but think for yourself)
 
 Working style
 - Before each tool call, write one short sentence saying what you are doing and why.
-- Prefer measurements over speculation: diffs suggest hypotheses, experiments confirm them.
+- Prefer measurements over speculation: diffs suggest hypotheses, experiments confirm them. Never state a
+  metric value that did not come from run_experiment, and never claim a fix works before measuring it.
+- If a tool returns an error, read it and adapt (fix the arguments, choose another approach); do not
+  repeat the identical call. If the fix does not restore the metric after two attempts, stop editing
+  and report what you measured.
 - Only use ask_human when a genuine judgment call is needed (ambiguous evidence, budget exhausted).
 - Be precise and honest about uncertainty. Report the narrowest commit range you could establish if the
   culprit cannot be isolated.

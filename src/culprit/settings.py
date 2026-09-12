@@ -58,6 +58,8 @@ class Settings:
     # --- guard-rails -----------------------------------------------------------------------------
     max_experiments: int = field(default_factory=lambda: _env_int("CULPRIT_MAX_EXPERIMENTS", 10))
     experiment_timeout_s: int = field(default_factory=lambda: _env_int("CULPRIT_EXPERIMENT_TIMEOUT", 600))
+    max_tool_calls: int = field(default_factory=lambda: _env_int("CULPRIT_MAX_TOOL_CALLS", 60))
+    max_repeated_calls: int = field(default_factory=lambda: _env_int("CULPRIT_MAX_REPEATED_CALLS", 3))
     approval_tools: tuple[str, ...] = field(
         default_factory=lambda: tuple(
             t.strip()

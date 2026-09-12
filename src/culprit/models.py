@@ -30,6 +30,7 @@ class ProjectConfig(BaseModel):
         test_command: "python -m pytest -q"
         metrics_history: "nightly/metrics_history.json"
         default_config: smoke
+        nightly_config: full
     """
 
     metric: str = "f1"
@@ -41,6 +42,9 @@ class ProjectConfig(BaseModel):
         "nightly/metrics_history.json", description="Path (relative to repo) of the metric store"
     )
     default_config: str = "smoke"
+    nightly_config: str | None = Field(
+        None, description="Config the nightly job uses (culprit record-nightly)"
+    )
     experiment_timeout_s: int = 600
     main_branch: str = "main"
 
@@ -156,6 +160,7 @@ class RunRecord(BaseModel):
     updated_at: str = Field(default_factory=utcnow_iso)
     model: str = ""
     task: str = ""
+    warnings: list[str] = Field(default_factory=list)
     experiments: list[ExperimentResult] = Field(default_factory=list)
     fix_branch: str | None = None
     fix_worktree: str | None = None

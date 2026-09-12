@@ -10,7 +10,9 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import shutil
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -27,6 +29,18 @@ from culprit.models import ExperimentResult
 
 MAX_FILE_CHARS = 12_000
 MAX_DIFF_CHARS = 7_000
+
+
+def render_command(template: str, **substitutions: str) -> str:
+    """Substitute ``{name}`` placeholders without interpreting any other braces in the command.
+
+    ``str.format`` would choke on shell commands that legitimately contain braces (``jq '{...}'``,
+    ``echo {}``); only the documented placeholders are replaced.
+    """
+    out = template
+    for name, value in substitutions.items():
+        out = out.replace("{" + name + "}", value)
+    return out
 
 
 def _tail(text: str, lines: int = 25, chars: int = 2500) -> str:
@@ -201,12 +215,30 @@ class InvestigationTools:
         return self._shim_dir
 
     def _run_command(self, command: str, cwd: Path, timeout: int) -> subprocess.CompletedProcess:
+        """Run a shell command in its own process group so a timeout kills the whole tree."""
         env = {**os.environ}
         env["PATH"] = f"{self._python_shim_path()}{os.pathsep}{env.get('PATH', '')}"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
-        return subprocess.run(
-            command, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=timeout, env=env
+        proc = subprocess.Popen(
+            command,
+            shell=True,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            start_new_session=True,
         )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            proc.communicate()
+            raise
+        return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
 
     def _resolve_experiment_target(self, ref: str) -> tuple[Path, str, bool]:
         """Return (working directory, sha, is_fix_branch) for a ref."""
@@ -216,6 +248,9 @@ class InvestigationTools:
             return fix_wt, gitutil.resolve_sha(fix_wt, "HEAD") + "+wip", True
         sha = gitutil.resolve_sha(self.ctx.repo, ref)
         wt = self.ctx.worktrees_dir / sha[:12]
+        if wt.exists() and not (wt / ".git").exists():  # half-created directory from an interrupted run
+            shutil.rmtree(wt, ignore_errors=True)
+            gitutil.prune_worktrees(self.ctx.repo)
         gitutil.add_worktree(self.ctx.repo, wt, sha)
         return wt, sha, False
 
@@ -251,8 +286,8 @@ class InvestigationTools:
         metrics_dir = self.ctx.run_dir / "metrics"
         metrics_dir.mkdir(exist_ok=True)
         out_path = metrics_dir / f"{sha.replace('+', '-')[:16]}-{config}-{int(time.time() * 1000)}.json"
-        command = project.experiment_command.format(
-            config=shlex.quote(config), out=shlex.quote(str(out_path))
+        command = render_command(
+            project.experiment_command, config=shlex.quote(config), out=shlex.quote(str(out_path))
         )
         timeout = min(project.experiment_timeout_s, self.ctx.settings.experiment_timeout_s)
 
@@ -269,7 +304,15 @@ class InvestigationTools:
                 continue
             metrics = self._parse_metrics(out_path, proc.stdout)
             if metrics is None:
-                last_error = "command succeeded but produced no metrics JSON"
+                last_error = "command succeeded but produced no metrics JSON (expected a JSON object at {out} or on stdout)"
+                break  # deterministic: retrying will not help
+            if project.metric not in metrics:
+                last_error = (
+                    f"metrics JSON does not contain the tracked metric '{project.metric}'; "
+                    f"available keys: {sorted(metrics)}"
+                )
+                metrics = None
+                break
         duration = round(time.time() - started, 2)
 
         result = ExperimentResult(
@@ -293,19 +336,29 @@ class InvestigationTools:
         return payload
 
     @staticmethod
-    def _parse_metrics(out_path: Path, stdout: str) -> dict[str, float] | None:
+    def _numeric(data: Any) -> dict[str, float] | None:
+        if not isinstance(data, dict):
+            return None
+        return {
+            k: float(v) for k, v in data.items() if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+
+    @classmethod
+    def _parse_metrics(cls, out_path: Path, stdout: str) -> dict[str, float] | None:
         if out_path.exists():
             try:
-                data = json.loads(out_path.read_text())
-                return {k: v for k, v in data.items() if isinstance(v, (int, float))}
-            except json.JSONDecodeError:
+                parsed = cls._numeric(json.loads(out_path.read_text()))
+                if parsed is not None:
+                    return parsed
+            except (json.JSONDecodeError, OSError):
                 pass
         for line in reversed(stdout.strip().splitlines()):
             line = line.strip()
             if line.startswith("{") and line.endswith("}"):
                 try:
-                    data = json.loads(line)
-                    return {k: v for k, v in data.items() if isinstance(v, (int, float))}
+                    parsed = cls._numeric(json.loads(line))
+                    if parsed is not None:
+                        return parsed
                 except json.JSONDecodeError:
                     continue
         return None
@@ -386,6 +439,8 @@ class InvestigationTools:
             }
         if count > 1:
             return {"error": f"old_text occurs {count} times; include more context so it is unique"}
+        if old_text == new_text:
+            return {"error": "old_text and new_text are identical; nothing to change"}
         updated = original.replace(old_text, new_text, 1)
         target.write_text(updated)
         diff = "".join(
@@ -411,6 +466,8 @@ class InvestigationTools:
         if err:
             return err
         assert target is not None
+        if ".git" in Path(path).parts:
+            return {"error": "refusing to write inside .git"}
         existed = target.exists()
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
@@ -464,6 +521,14 @@ class InvestigationTools:
             except gitutil.GitError as exc:
                 return {"error": f"could not commit fix: {exc}"}
         base = self.ctx.project.main_branch
+        try:
+            changed = gitutil.run_git(self.ctx.repo, "diff", "--name-only", f"{base}...{record.fix_branch}")
+        except gitutil.GitError:
+            changed = ""
+        if not changed.strip():
+            return {
+                "error": "the fix branch has no changes compared to the main branch; make and verify a fix first"
+            }
         try:
             result = self.ctx.pr_client.open_pull_request(self.ctx.repo, record.fix_branch, base, title, body)
         except Exception as exc:  # network / auth problems -> keep the workflow alive

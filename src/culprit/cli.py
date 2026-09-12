@@ -156,7 +156,14 @@ def demo_init(
     dest: Optional[Path] = typer.Option(
         None, help="Where to create the repository (default demo/<scenario repo>)."
     ),
-    force: bool = typer.Option(False, help="Recreate if it exists."),
+    force: bool = typer.Option(
+        False, help="Recreate if it exists (only Culprit-generated demo repositories are ever deleted)."
+    ),
+    without_latest_nightly: bool = typer.Option(
+        False,
+        "--without-latest-nightly",
+        help="Omit this morning's bad nightly record, to demo `culprit record-nightly` + `culprit watch`.",
+    ),
 ):
     """Create a reproducible demo repository (seven commits, one silent regression, real nightly metrics)."""
     from culprit.demo.scenarios import generate_scenario, get_scenario
@@ -167,7 +174,7 @@ def demo_init(
         raise typer.BadParameter(str(exc))
     target = dest or sc.default_dest
     console.print(f"[bold]Creating {sc.title}[/] at {target}")
-    summary = generate_scenario(scenario, target, force=force)
+    summary = generate_scenario(scenario, target, force=force, drop_latest_nightly=without_latest_nightly)
     console.print(
         f"[green]✔ ready[/] nightly {summary['metric']} {summary['metric_good']} → {summary['metric_bad']}"
         f"  (culprit {summary['culprit'][:7]} — kept out of the model's sight; only `culprit evaluate` uses it for scoring)"
@@ -185,7 +192,7 @@ def demo_init_secondary(
     """Create the secondary, *unseen* demo repository (fraud-risk) used to evaluate a real model."""
     from culprit.demo.scenarios import SECONDARY_SCENARIO
 
-    demo_init(scenario=SECONDARY_SCENARIO, dest=dest, force=force)
+    demo_init(scenario=SECONDARY_SCENARIO, dest=dest, force=force, without_latest_nightly=False)
 
 
 @demo_app.command("list")
@@ -315,6 +322,104 @@ def _finish(record) -> None:
         raise typer.Exit(code=1)
     else:
         console.print(f"\nstatus: {record.status.value}")
+
+
+@app.command("record-nightly")
+def record_nightly_cmd(
+    repo: Path = typer.Argument(..., help="Repository with a .culprit.yaml."),
+    config: Optional[str] = typer.Option(
+        None, help="Experiment config to run (default: nightly_config from .culprit.yaml)."
+    ),
+):
+    """What a nightly job does: evaluate HEAD and append the result to the metric store."""
+    from culprit.automation import record_nightly
+
+    run = record_nightly(repo, config=config)
+    console.print(
+        f"[green]✔[/] recorded {run.run_id}: commit {run.commit[:7]} {run.config} → "
+        + ", ".join(f"{k}={v}" for k, v in run.metrics.items())
+    )
+
+
+@app.command()
+def watch(
+    repo: Path = typer.Argument(..., help="Repository with a .culprit.yaml and a metric store."),
+    once: bool = typer.Option(False, "--once", help="Check once and exit (for cron / scheduled workflows)."),
+    interval: int = typer.Option(900, help="Polling interval in seconds when not using --once."),
+    channel: str = typer.Option("#ml-alerts", help="Notification channel used when approval is needed."),
+    dashboard_url: Optional[str] = typer.Option(
+        None, help="Dashboard URL to include in the approval notification."
+    ),
+    auto_approve: bool = typer.Option(False, help="Unattended mode: open the PR without asking (CI)."),
+):
+    """Autonomous trigger: if the metric store shows a regression above threshold, start Culprit.
+
+    Each good→bad window is investigated once (state in runs/_watch). A human is contacted only when
+    the run pauses for approval. Exit codes with --once: 0 nothing to do or completed, 3 awaiting
+    human approval, 1 failed.
+    """
+    from culprit.automation import check_and_trigger, watch_forever
+
+    settings = get_settings(refresh=True)
+    if auto_approve:
+        settings.auto_approve = True
+    if not once:
+        console.print(f"[bold]watching {repo}[/] every {interval}s (model {settings.describe_model()})")
+        watch_forever(repo, settings, interval_s=interval, channel=channel, dashboard_url=dashboard_url)
+        return
+    outcome = check_and_trigger(repo, settings, channel=channel, wait=True, dashboard_url=dashboard_url)
+    status = outcome["status"]
+    if status == "no_regression":
+        console.print(
+            f"[green]✔[/] no regression in {outcome['metric']} ({outcome['runs_seen']} runs in the store)"
+        )
+        raise typer.Exit(code=0)
+    if status == "already_handled":
+        console.print(f"[dim]window {outcome['window']} already investigated by run {outcome['run_id']}[/]")
+        raise typer.Exit(code=0)
+    console.print(
+        f"[bold]regression detected[/] {outcome['metric']} {outcome['baseline_value']} → "
+        f"{outcome['regressed_value']}; started run [bold]{outcome['run_id']}[/] → {outcome.get('run_status')}"
+    )
+    if outcome.get("run_status") == "awaiting_human":
+        note = outcome.get("notification", {})
+        console.print(
+            Panel(
+                outcome["approval_command"],
+                title=f"approval required (notified via {note.get('mode', '?')})",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(code=3)
+    if outcome.get("run_status") == "failed":
+        console.print(f"[red]run failed:[/] {outcome.get('error')}")
+        raise typer.Exit(code=1)
+    console.print(f"[green]✔ completed[/] see runs/{outcome['run_id']}/report.md")
+
+
+@app.command()
+def clean(
+    run_id: str = typer.Argument(..., help="Run id whose git worktrees should be removed."),
+    delete_branch: bool = typer.Option(False, "--delete-branch", help="Also delete the run's fix branch."),
+):
+    """Remove a run's experiment/fix worktrees from the target repository (the run's files are kept)."""
+    from culprit import gitutil
+
+    mgr = _manager()
+    record = mgr.get(run_id)
+    repo = Path(record.repo_path)
+    run_dir = Path(mgr.runs_dir) / run_id
+    removed = 0
+    for wt in list((run_dir / "worktrees").glob("*")) + (
+        [run_dir / "fix"] if (run_dir / "fix").exists() else []
+    ):
+        gitutil.remove_worktree(repo, wt)
+        removed += 1
+    gitutil.prune_worktrees(repo)
+    if delete_branch and record.fix_branch:
+        gitutil.run_git(repo, "branch", "-D", record.fix_branch, check=False)
+        console.print(f"deleted branch {record.fix_branch}")
+    console.print(f"[green]✔[/] removed {removed} worktree(s) for run {run_id}; run files kept in {run_dir}")
 
 
 @app.command()

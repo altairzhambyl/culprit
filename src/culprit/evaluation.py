@@ -23,6 +23,7 @@ from culprit.demo.scenarios import generate_scenario, get_scenario
 from culprit.models import RunRecord, RunStatus
 from culprit.service import RunManager
 from culprit.settings import Settings
+from culprit.tools.investigation import render_command
 
 _PYTHON_SHIM_DIR: Path | None = None
 
@@ -63,8 +64,10 @@ def _measure(repo: Path, ref: str, project: dict[str, Any], scratch: Path) -> fl
     gitutil.add_worktree(repo, wt, sha)
     try:
         out = wt / ".culprit-eval-metrics.json"
-        cmd = project["experiment_command"].format(
-            config=shlex.quote(project["default_config"]), out=shlex.quote(str(out))
+        cmd = render_command(
+            project["experiment_command"],
+            config=shlex.quote(project["default_config"]),
+            out=shlex.quote(str(out)),
         )
         proc = _run_in(wt, cmd, timeout=int(project.get("experiment_timeout_s", 600)))
         if proc.returncode != 0 or not out.exists():
@@ -245,11 +248,24 @@ def score_run(record: RunRecord, truth: dict[str, Any], scenario_key: str, run_d
         shutil.rmtree(scratch, ignore_errors=True)
         gitutil.prune_worktrees(repo)
 
+    # "Proves it": the culprit must have been *measured*, not guessed — an experiment at the culprit
+    # commit and one at its parent (or the good boundary) must both exist in the run.
+    measured = {e.sha[:12] for e in record.experiments if e.status == "ok" and "+wip" not in e.sha}
+    culprit_sha = truth["culprit"]
+    idx = next((i for i, c in enumerate(truth["commits"]) if c["sha"] == culprit_sha), None)
+    parent_sha = truth["commits"][idx - 1]["sha"] if idx else None
+    verified["culprit_measured"] = culprit_sha[:12] in measured
+    verified["parent_measured"] = bool(parent_sha) and parent_sha[:12] in measured
+    verified["culprit_bracketed_by_experiments"] = (
+        verified["culprit_measured"] and verified["parent_measured"]
+    )
+
     result["verified"] = verified
     result["guard_test_added"] = bool(verified["new_test_files"])
     result["success"] = bool(
         record.status == RunStatus.COMPLETED
         and culprit_correct
+        and verified["culprit_bracketed_by_experiments"]
         and verified["metric_recovered"]
         and (verified["tests_pass_on_fix_branch"] in (True, None))
     )
@@ -265,6 +281,7 @@ def format_summary(result: dict[str, Any]) -> str:
         f"experiments         {result['experiments']}   tool calls {result['tool_calls']}   model calls {result['model_calls']}",
         f"tokens              {result['input_tokens']} in / {result['output_tokens']} out   duration {result.get('duration_s', '?')}s",
         f"{result['metric']:<19} nightly {result['nightly_good']} -> {result['nightly_bad']}; fast config good {v.get('metric_at_last_good')} / bad {v.get('metric_at_first_bad')} / fix branch {v.get('metric_on_fix_branch')}",
+        f"culprit measured    culprit {v.get('culprit_measured')} / parent {v.get('parent_measured')}  (bracketed by experiments: {v.get('culprit_bracketed_by_experiments')})",
         f"fix verified        metric recovered: {v.get('metric_recovered')}   tests pass: {v.get('tests_pass_on_fix_branch')}   files: {', '.join(v.get('files_changed', [])) or '-'}",
         f"guard test added    {result.get('guard_test_added')}  {', '.join(v.get('new_test_files', []))}",
         f"mechanism mentioned {result.get('mechanism_mentioned')}  {result.get('mechanism_keywords_found')}",

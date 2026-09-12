@@ -8,6 +8,7 @@ worktrees), so a run can be resumed from another process — the approval can ha
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import threading
 import time
@@ -183,10 +184,32 @@ class RunManager:
             status=RunStatus.QUEUED,
             model=self.settings.describe_model(),
             task=task,
+            warnings=self._repo_warnings(repo_path, project.main_branch),
         )
         (run_dir / "project.json").write_text(project.model_dump_json(indent=2))
         (run_dir / "run.json").write_text(record.model_dump_json(indent=2))
         return record
+
+    @staticmethod
+    def _repo_warnings(repo: Path, main_branch: str) -> list[str]:
+        """Non-fatal observations about the target repository, surfaced to the human and the agent."""
+        warnings: list[str] = []
+        try:
+            if gitutil.run_git(repo, "status", "--porcelain", "--untracked-files=no").strip():
+                warnings.append(
+                    "The repository's working tree has uncommitted changes. Culprit only investigates committed "
+                    "history in isolated worktrees and never touches the main working tree; uncommitted changes "
+                    "are not part of any experiment."
+                )
+        except gitutil.GitError:
+            pass
+        try:
+            gitutil.resolve_sha(repo, main_branch)
+        except gitutil.GitError:
+            warnings.append(
+                f"Branch '{main_branch}' does not exist; the fix branch will be created from HEAD instead."
+            )
+        return warnings
 
     def _materialize_repo(self, repo: str | Path) -> Path:
         """Accept a local path or a git URL (cloned under runs/_repos)."""
@@ -241,8 +264,45 @@ class RunManager:
         record = self.get(run_id)
         if record.status not in (RunStatus.QUEUED, RunStatus.FAILED):
             raise ValueError(f"run {run_id} is {record.status.value}; only queued runs can be started")
-        prompt = KICKOFF_PROMPT.format(metric=record.metric, repo=record.repo_path, task=record.task or "")
+        self.preflight()
+        task = record.task or ""
+        if record.warnings:
+            task = (task + "\n" if task else "") + "Notes: " + " ".join(record.warnings)
+        prompt = KICKOFF_PROMPT.format(metric=record.metric, repo=record.repo_path, task=task)
         return self._launch(record, prompt, background)
+
+    def preflight(self) -> None:
+        """Fail fast — before any agent work — when the configured model provider cannot possibly work.
+
+        There is deliberately no fallback to the offline policy: a run either uses the provider that was
+        configured or does not start.
+        """
+        provider = self.settings.model_provider
+        if provider == "bedrock":
+            try:
+                import boto3
+            except ImportError as exc:  # pragma: no cover
+                raise RuntimeError("boto3 is required for the bedrock provider (pip install boto3)") from exc
+            from botocore.exceptions import BotoCoreError
+
+            session = boto3.Session(region_name=self.settings.aws_region)
+            try:
+                credentials = session.get_credentials()
+            except BotoCoreError as exc:
+                raise RuntimeError(f"AWS credentials could not be resolved: {exc}") from exc
+            if credentials is None:
+                raise RuntimeError(
+                    "no AWS credentials found for CULPRIT_MODEL_PROVIDER=bedrock (configure AWS_PROFILE / "
+                    "AWS_ACCESS_KEY_ID+AWS_SECRET_ACCESS_KEY / an instance role, then run `culprit doctor`)"
+                )
+            if not session.region_name:
+                raise RuntimeError("no AWS region configured (set AWS_REGION, e.g. us-west-2)")
+        elif provider == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
+            raise RuntimeError("ANTHROPIC_API_KEY is not set for CULPRIT_MODEL_PROVIDER=anthropic")
+        elif provider == "openai" and not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY is not set for CULPRIT_MODEL_PROVIDER=openai")
+        elif provider not in ("bedrock", "anthropic", "openai", "scripted"):
+            raise RuntimeError(f"unknown CULPRIT_MODEL_PROVIDER '{provider}'")
 
     def respond(self, run_id: str, response: Any, background: bool = True) -> RunRecord:
         """Answer the pending interrupt(s) (approval decision or free-text answer) and resume."""
@@ -296,6 +356,11 @@ class RunManager:
                 )
                 return
 
+            if result.stop_reason == "max_tokens":
+                raise RuntimeError(
+                    "the model hit its output token limit mid-investigation (stop_reason=max_tokens); "
+                    "raise CULPRIT_MODEL_MAX_TOKENS or use a model with a larger output window"
+                )
             if result.stop_reason not in ("end_turn", "stop_sequence"):
                 raise RuntimeError(f"agent stopped unexpectedly: {result.stop_reason}")
 
@@ -304,11 +369,34 @@ class RunManager:
             ctx.save()
             ctx.emit("status", {"status": record.status.value})
 
-            report_result = agent(REPORT_PROMPT, structured_output_model=IncidentReport)
-            self._accumulate_usage(ctx, report_result)
-            report = report_result.structured_output
-            if not isinstance(report, IncidentReport):
-                raise RuntimeError("the model did not return a structured IncidentReport")
+            report: IncidentReport | None = None
+            last_error = ""
+            for attempt in range(2):  # a malformed structured output gets exactly one retry
+                prompt = (
+                    REPORT_PROMPT
+                    if attempt == 0
+                    else (
+                        REPORT_PROMPT
+                        + "\nYour previous attempt did not produce a valid IncidentReport ("
+                        + last_error[:300]
+                        + "). Call the IncidentReport tool with all required fields."
+                    )
+                )
+                try:
+                    report_result = agent(prompt, structured_output_model=IncidentReport)
+                    self._accumulate_usage(ctx, report_result)
+                    candidate = report_result.structured_output
+                    if isinstance(candidate, IncidentReport):
+                        report = candidate
+                        break
+                    last_error = f"stop_reason={report_result.stop_reason}, no structured output"
+                except Exception as exc:  # pydantic validation or provider errors
+                    last_error = f"{type(exc).__name__}: {exc}"
+                    ctx.emit("report_retry", {"attempt": attempt + 1, "error": last_error[:300]})
+            if report is None:
+                raise RuntimeError(
+                    f"the model did not return a valid structured IncidentReport ({last_error})"
+                )
             record.report = report
             record.status = RunStatus.COMPLETED
             (ctx.run_dir / "report.json").write_text(report.model_dump_json(indent=2))

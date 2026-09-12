@@ -6,5 +6,6 @@ experiment_command: "python -m churn.train --config {config} --out {out}"   # {c
 test_command: "python -m pytest -q"
 metrics_history: "nightly/metrics_history.json"   # metric store (JSON) — relative to the repo or absolute
 default_config: smoke            # fast config used for bisection experiments
+nightly_config: full             # config your nightly job uses (`culprit record-nightly` appends its result)
 experiment_timeout_s: 300
 main_branch: main
