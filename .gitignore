@@ -7,8 +7,8 @@ dist/
 .env
 .pytest_cache/
 .ruff_cache/
-runs/
-demo/
+/runs/
+/demo/
 *.log
 .DS_Store
 node_modules/
