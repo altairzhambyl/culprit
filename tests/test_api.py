@@ -106,3 +106,18 @@ def test_stale_running_runs_are_marked_failed_on_restart(demo_repo, offline_sett
     assert record.run_id in fresh.recover_stale_runs() or fresh.get(record.run_id).status == RunStatus.FAILED
     assert fresh.get(record.run_id).status == RunStatus.FAILED
     assert list(fresh.subscribe(record.run_id)) == []  # terminates immediately
+
+
+def test_api_auto_approval_is_scoped_to_one_run(client, demo_repo, monkeypatch):
+    from culprit.service import RunManager
+    from culprit.web import app as web
+
+    monkeypatch.setattr(web.manager, "start", lambda *args, **kwargs: None)
+    first = client.post("/api/runs", json={"repo": demo_repo["path"], "auto_approve": True})
+    second = client.post("/api/runs", json={"repo": demo_repo["path"]})
+    assert first.status_code == second.status_code == 201
+    assert web.manager.settings.auto_approve is False
+    # A fresh process restores the choice for each run, without changing the other run.
+    restored = RunManager(web.manager.settings)
+    assert restored._context(restored.get(first.json()["run_id"])).settings.auto_approve is True
+    assert restored._context(restored.get(second.json()["run_id"])).settings.auto_approve is False

@@ -1,6 +1,6 @@
 # Culprit — the ML regression investigator
 
-![CI](https://github.com/<your-org>/culprit/actions/workflows/ci.yml/badge.svg) ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg) ![Strands Agents](https://img.shields.io/badge/built%20with-Strands%20Agents-232F3E) ![Bedrock AgentCore](https://img.shields.io/badge/deploys%20to-Bedrock%20AgentCore-FF9900)
+![CI](https://github.com/danialmukash-cell/culprit/actions/workflows/ci.yml/badge.svg) ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg) ![Strands Agents](https://img.shields.io/badge/built%20with-Strands%20Agents-232F3E)
 
 > An ML metric silently regresses after several code changes. Tests are still green. **Culprit**
 > autonomously isolates the causal commit by re-running experiments, identifies the mechanism, writes
@@ -19,6 +19,27 @@ AgentCore Runtime entrypoint is included.
 <sub>Screenshots are from the offline integration-test policy (`CULPRIT_MODEL_PROVIDER=scripted`), which
 drives the same agent loop, tools, hooks and interrupt as a real model run. See
 <a href="docs/validation.md">validation status</a> for what has and has not been executed with a real model.</sub>
+
+## Verified release status
+
+The latest independent review passed **67 tests** and Ruff. The demo video records real experiments and human approval with the explicitly labelled **scripted** provider. Live-model fraud validation and AgentCore cloud deployment are still pending. See [release review](docs/release-review.md) and [recorded evaluation](docs/evidence/recorded-demo-evaluation.json).
+
+![Architecture](docs/architecture-final.png)
+
+### Windows quick start (PowerShell)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+$env:PYTHONUTF8 = "1"
+$env:CULPRIT_MODEL_PROVIDER = "scripted"
+pytest -q
+culprit demo init
+culprit serve
+```
+
+Open the printed local dashboard URL, choose the demo repository and start an investigation. Approve the proposed local PR in the dashboard. To demonstrate the automatic trigger, generate with `culprit demo init --without-latest-nightly`, then run `culprit record-nightly demo/churn-model` and `culprit watch demo/churn-model --once`. Exit status 3 means awaiting approval.
 
 ## The problem
 
@@ -57,11 +78,11 @@ broken commit — the regressions are silent by construction.
 ## Quick start
 
 ```bash
-git clone <this repo> && cd culprit
+git clone https://github.com/danialmukash-cell/culprit.git && cd culprit
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                                   # 64 tests, no credentials needed
+pytest -q                                   # 67 tests, no credentials needed
 
 culprit demo init                           # churn-model: the golden path
 culprit demo init-secondary                 # fraud-risk: the unseen regression

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -101,7 +102,21 @@ def build_repository(
                 f"refusing to delete {dest}: it is not a Culprit-generated demo repository "
                 f"(missing .git/{DEMO_MARKER}). Choose another --dest or remove it yourself."
             )
-        shutil.rmtree(dest)
+        def remove_readonly(func, path, exc_info):
+            target = Path(path).resolve()
+            if (
+                os.name != "nt"
+                or not isinstance(exc_info[1], PermissionError)
+                or not target.is_relative_to(dest)
+                or func not in (os.unlink, os.rmdir)
+            ):
+                raise exc_info[1]
+            # Git stores object files read-only on Windows. Only the validated,
+            # marked demo directory above may be recreated by --force.
+            target.chmod(stat.S_IWRITE | stat.S_IREAD)
+            func(path)
+
+        shutil.rmtree(dest, onerror=remove_readonly)
     dest.mkdir(parents=True)
 
     def say(msg: str) -> None:

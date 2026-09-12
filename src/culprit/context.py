@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -80,7 +81,16 @@ class InvestigationContext:
         self.record.updated_at = utcnow_iso()
         tmp = self.run_dir / "run.json.tmp"
         tmp.write_text(self.record.model_dump_json(indent=2))
-        tmp.replace(self.run_dir / "run.json")
+        # Windows can briefly deny atomic replacement while the dashboard reads the file.
+        # Preserve atomic writes; retry only sharing/access errors, with a bounded wait.
+        for attempt in range(10):
+            try:
+                tmp.replace(self.run_dir / "run.json")
+                break
+            except PermissionError as exc:
+                if getattr(exc, "winerror", None) not in (5, 32) or attempt == 9:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
 
     # -- paths ------------------------------------------------------------------------------------
     @property

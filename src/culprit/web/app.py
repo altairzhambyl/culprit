@@ -138,10 +138,10 @@ def start_run(req: StartRequest) -> dict[str, Any]:
                 + ", ".join(map(str, sorted(allowed))),
             )
         req.auto_approve = False
-    if req.auto_approve:
-        manager.settings.auto_approve = True
     try:
-        record = manager.create_run(req.repo, metric=req.metric, task=req.task)
+        record = manager.create_run(
+            req.repo, metric=req.metric, task=req.task, auto_approve=req.auto_approve
+        )
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc))
     manager.start(record.run_id, background=True)

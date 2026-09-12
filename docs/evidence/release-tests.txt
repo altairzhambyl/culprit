@@ -1,0 +1,29 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.2, pytest-8.3.5, pluggy-1.5.0
+cachedir: D:\Codex\2026-09-12\create-an-image-of\work\pytest-release-cache
+rootdir: D:\Progs\Devpost\culprit
+configfile: pyproject.toml
+testpaths: tests
+timeout: 300.0s
+timeout method: thread
+timeout func_only: False
+collected 67 items
+
+tests\test_adapters.py .......                                           [ 10%]
+tests\test_api.py ......                                                 [ 19%]
+tests\test_automation.py ...                                             [ 23%]
+tests\test_demo_repo.py ....                                             [ 29%]
+tests\test_evaluation.py ..                                              [ 32%]
+tests\test_fraud_scenario.py ......                                      [ 41%]
+tests\test_golden_path.py .....                                          [ 49%]
+tests\test_hardening.py ................                                 [ 73%]
+tests\test_hooks_and_model.py ............                               [ 91%]
+tests\test_tools.py ......                                               [100%]
+
+============================== warnings summary ===============================
+C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Lib\site-packages\starlette\testclient.py:37
+  C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Lib\site-packages\starlette\testclient.py:37: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = typing.Callable[[], typing.ContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================== 67 passed, 1 warning in 235.88s (0:03:55) ==================

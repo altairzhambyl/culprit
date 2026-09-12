@@ -13,6 +13,7 @@ import shutil
 import threading
 import time
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -168,6 +169,7 @@ class RunManager:
         task: str = "",
         project_overrides: dict[str, Any] | None = None,
         run_id: str | None = None,
+        auto_approve: bool | None = None,
     ) -> RunRecord:
         repo_path = self._materialize_repo(repo)
         overrides = dict(project_overrides or {})
@@ -183,6 +185,7 @@ class RunManager:
             metric=project.metric,
             status=RunStatus.QUEUED,
             model=self.settings.describe_model(),
+            auto_approve=self.settings.auto_approve if auto_approve is None else auto_approve,
             task=task,
             warnings=self._repo_warnings(repo_path, project.main_branch),
         )
@@ -240,7 +243,7 @@ class RunManager:
             repo=repo,
             run_dir=run_dir,
             project=project,
-            settings=self.settings,
+            settings=replace(self.settings, auto_approve=record.auto_approve),
             metric_store=JsonMetricStore(
                 project.metrics_history
                 if Path(project.metrics_history).is_absolute()

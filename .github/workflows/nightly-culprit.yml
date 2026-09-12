@@ -22,6 +22,8 @@ permissions:
 
 jobs:
   nightly:
+    # Opt in only in a configured ML repository; this source repository is not the target.
+    if: ${{ vars.CULPRIT_NIGHTLY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-west-2
@@ -43,7 +45,7 @@ jobs:
       - name: Install the project and Culprit
         run: |
           pip install -r requirements.txt
-          pip install "culprit @ git+https://github.com/<your-org>/culprit.git"
+          pip install "culprit @ git+https://github.com/danialmukash-cell/culprit.git"
       - name: Restore the metric store
         uses: actions/cache@v4
         with:

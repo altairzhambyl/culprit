@@ -1,3 +1,5 @@
+> Historical handoff below. See [release-review.md](release-review.md) for the subsequent September 13 independent verification and current limitations.
+
 # Reviewer handoff (Astra)
 
 This document tells an independent reviewer exactly what exists, what was executed, how to reproduce

@@ -1,0 +1,97 @@
+{
+  "scenario": "churn",
+  "scenario_title": "churn-model: order-dependent categorical encoding",
+  "run_id": "20260912-215825-56bb",
+  "status": "completed",
+  "error": null,
+  "metric": "f1",
+  "expected_culprit": "eb367c9",
+  "expected_culprit_subject": "refactor(features): simplify categorical encoding with pandas.factorize",
+  "predicted_culprit": "eb367c9",
+  "culprit_correct": true,
+  "experiments": 5,
+  "experiments_detail": [
+    {
+      "ref": "0791e50",
+      "config": "smoke",
+      "value": 0.8111,
+      "status": "ok"
+    },
+    {
+      "ref": "ab56a44",
+      "config": "smoke",
+      "value": 0.7027,
+      "status": "ok"
+    },
+    {
+      "ref": "eb367c9",
+      "config": "smoke",
+      "value": 0.7027,
+      "status": "ok"
+    },
+    {
+      "ref": "9cc2b36",
+      "config": "smoke",
+      "value": 0.8111,
+      "status": "ok"
+    },
+    {
+      "ref": "culprit/fix-20260912-215825-56bb",
+      "config": "smoke",
+      "value": 0.8111,
+      "status": "ok"
+    }
+  ],
+  "tool_calls": 17,
+  "model_calls": 17,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "root_cause": "The refactor replaced explicit category maps with pandas.factorize, which assigns integer codes by order of first appearance in each dataframe. Training and evaluation frames were encoded differently, so the model scored mismatched features at evaluation time. No error was raised; the metric silently dropped.",
+  "confidence": "high",
+  "agent_reported": {
+    "baseline_value": 0.8301,
+    "regressed_value": 0.6624,
+    "recovered_value": 0.8111,
+    "files_changed": [
+      "churn/features.py",
+      "tests/test_encoding_consistency.py"
+    ],
+    "guard_test": "tests/test_encoding_consistency.py",
+    "pull_request": "file:///D:/Codex/2026-09-12/create-an-image-of/work/recording/runs/20260912-215825-56bb/pull_request.md"
+  },
+  "nightly_good": 0.8301,
+  "nightly_bad": 0.6624,
+  "mechanism_keywords_found": [
+    "factorize",
+    "encod",
+    "order",
+    "categor"
+  ],
+  "mechanism_mentioned": true,
+  "verified": {
+    "fix_branch": "culprit/fix-20260912-215825-56bb",
+    "files_changed": [
+      "churn/features.py",
+      "tests/test_encoding_consistency.py"
+    ],
+    "new_test_files": [
+      "tests/test_encoding_consistency.py"
+    ],
+    "culprit_file_touched": true,
+    "metric_on_fix_branch": 0.8111,
+    "metric_at_last_good": 0.8111,
+    "metric_at_first_bad": 0.7027,
+    "metric_recovered": true,
+    "tests_pass_on_fix_branch": true,
+    "culprit_measured": true,
+    "parent_measured": true,
+    "culprit_bracketed_by_experiments": true
+  },
+  "guard_test_added": true,
+  "success": true,
+  "model": "scripted (deterministic offline model)",
+  "provider": "scripted",
+  "real_model": false,
+  "provenance": "Independently scored after the actual recorded nightly/watch investigation and explicit browser approval.",
+  "approvals_requested": 1
+}

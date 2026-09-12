@@ -1,150 +1,66 @@
-# Devpost submission copy
+# Culprit
 
-**Track:** Professional Agents
-**Required assets checklist:** public GitHub repo with MIT license visible in *About* ✔ · README ✔ ·
-architecture diagram (`docs/architecture.png`) ✔ · ≤5-min video (YouTube/Vimeo, public) ☐ ·
-AWS Builder ID ☐ · optional builder.aws article (`docs/build-story.md`) ☐ · optional live demo link ☐
+## One-line summary
+Culprit investigates silent ML regressions with experiments, verifies a repair, and asks for human approval before opening a pull request.
 
----
-
-## Project name
-
-**Culprit**
-
-## Tagline
-
-Culprit doesn't guess which commit broke your model. It reruns the experiments and proves it — then
-fixes it, adds a guard test, and asks you once before opening the PR.
-
-## Inspiration
-
-Every ML team has the same bad morning. The nightly evaluation dropped, several pull requests merged
-since the last good run, and someone senior loses half a day to a ritual we all know by heart: find
-the window, check out commits, retrain, compare numbers, read diffs, write a fix, prove it, write it
-up. Monitoring tools are great at raising the alarm. Nothing does the *investigation* — because the
-investigation means running experiments and touching code, not chatting about them.
-
-We wanted an agent that does the part of the job people actually dread, in the way a careful
-engineer would: measure instead of guess, bisect instead of eyeball, verify before claiming, and
-stop for a human only at the moment that genuinely needs one.
+## Problem and audience
+ML engineers can wake up to a serious quality regression even when training succeeds and CI is green. Several valid-looking changes have merged, but monitoring cannot tell them which change caused the drop. An engineer then repeats the same work: check out commits, run evaluations, compare measurements, inspect the culprit, implement a repair, and verify it.
 
 ## What it does
+Culprit watches recorded nightly evaluations. When the metric crosses a regression threshold, it starts an investigation once for that good-to-bad window. A Strands agent calibrates both endpoints, bisects candidate commits through real experiments in isolated Git worktrees, inspects code, proposes a fix, verifies the metric and tests, and pauses for human approval before producing a pull request and an incident report.
 
-Culprit is an ML regression investigator built on the Strands Agents SDK. Point it at a git
-repository with a `.culprit.yaml` (metric, experiment command, test command, metric history) and it:
+The intended audience is small ML teams and engineers who need reproducible evidence and a reviewable fix, rather than a diff-based guess. It removes the repeated investigation work while leaving the consequential decision with the engineer.
 
-1. reads the recorded metric history and finds the last-good → first-bad window;
-2. lists the candidate commits and calibrates "good" and "bad" under a fast experiment config;
-3. **bisects by actually training and evaluating** each candidate in an isolated git worktree;
-4. reads the culprit's diff and explains the mechanism of the regression;
-5. writes a fix on a branch, **re-runs the experiment to prove the metric recovers**, adds a
-   regression test that would have caught the bug, and runs the test suite;
-6. pauses for one human decision — *open the pull request?* — using a Strands interrupt;
-7. opens the PR, notifies the team channel, and produces a structured incident report.
+## Implementation
+One Strands Agent uses twelve tools for Git inspection, experiments, editing, testing, approval and delivery. Strands hooks enforce experiment budgets, limit repeated tool calls, record traces and interrupt before consequential actions. FileSessionManager preserves the session across a pause and a later resume. FastAPI and server-sent events power the dashboard; a Typer CLI provides the same workflow. Amazon Bedrock is the default real-model provider, with Anthropic and OpenAI alternatives.
 
-It ships with a web dashboard (live timeline, bisection board, metric chart, approval card, report),
-a CLI, and an Amazon Bedrock AgentCore Runtime entrypoint.
+## What the submitted demonstration proves
+The video is an actual recording of the local application using the explicitly labelled **scripted** integration-test provider. This provider knows the churn repair; the Git worktrees, ML training, measurements, tests, approval and report are real. These results are **not evidence of real-model generalization**.
 
-Two generated demo repositories come with it. `churn-model` is a runnable tabular ML project whose
-seven-commit history contains one silent regression: a "harmless" refactor that switched categorical
-encoding to `pandas.factorize`, so training and evaluation frames were encoded differently (nightly
-F1 0.83 → 0.66). `fraud-risk` is a card-fraud classifier whose holdout PR-AUC collapsed (0.80 → 0.45)
-after a "performance" refactor made the training and holdout feature transforms inconsistent. In both,
-the project's own tests stay green at the broken commit.
+In the recorded investigation, nightly F1 dropped from 0.8301 to 0.6624. Five experiments identified commit `eb367c9`. A separate evaluator subsequently checked the same run and independently measured fast-config F1 recovering from 0.7027 to 0.8111, matching its fast-config good baseline of 0.8111. It reran the project tests successfully and confirmed the new regression-test file. Fast-config values and nightly values are deliberately reported separately.
 
-In the deterministic integration run (offline policy), Culprit isolates the churn culprit in four fast
-experiments (two to calibrate, two to bisect), fixes it, verifies the recovery, adds a guard test and
-opens the PR after one click. **[Replace this sentence with the real-model numbers from
-`runs/<id>/evaluation.json` after running `culprit evaluate --scenario fraud` — see docs/validation.md.]**
+The approval was explicit in the dashboard. The recorded PR and notification use local adapters. A live GitHub PR for this generated ML repository is not claimed. The source repository is public at https://github.com/danialmukash-cell/culprit.
 
-## How we built it
+## Validation and limitations
+- Release verification: **67 passed, 1 warning in 235.88 seconds**, Python 3.11.2 on Windows; Ruff passed.
+- The fraud scenario is separate from the scripted policy's repair logic. A real provider must still run its generalization evaluation.
+- Real Bedrock / Anthropic / OpenAI investigation: not run; no authorized provider credentials were available.
+- AgentCore entrypoint is included; cloud deployment and cloud invocation are not verified.
+- The scheduled workflow is an opt-in example for a configured ML repository, rather than an active job in the Culprit source repository.
+- Local sessions are filesystem-based. The dashboard has token/demo-only controls, not a full user-account system.
 
-* **Strands Agents SDK** is the core. One `Agent`, twelve `@tool`s bound to an investigation
-  (`get_metric_history`, `list_commits`, `show_commit`, `read_file`, `run_experiment`, `start_fix`,
-  `edit_file`, `write_file`, `run_tests`, `open_pull_request`, `notify`, `ask_human`), Bedrock Claude
-  as the default model.
-* **Human-in-the-loop with Strands interrupts.** An `ApprovalHook` on `BeforeToolCallEvent` calls
-  `event.interrupt(...)` before consequential tools; the agent stops with `stop_reason="interrupt"`,
-  the run is persisted, and *any* process — dashboard, `culprit resume`, a second AgentCore
-  invocation — rebuilds the agent from its `FileSessionManager` session and resumes with the human's
-  decision. A rejection becomes `event.cancel_tool` with an explanation the model reasons about.
-  `ask_human` does the same from inside a tool via `ToolContext.interrupt`.
-* **Hooks for guard-rails and observability.** A `BudgetHook` caps experiments and cancels the tool
-  with guidance; a `TraceHook` records every model and tool call to `trace.jsonl` and emits the
-  events the dashboard streams over SSE.
-* **Structured output.** The final `IncidentReport` is a Pydantic model passed as
-  `structured_output_model`, so the post-mortem is typed and validated.
-* **A custom Strands `Model` provider for testing.** `ScriptedModel` is a deterministic policy model
-  that replays the churn golden path (its bisection is generic; its fix is hard-coded). It powers the
-  47-test suite and a credential-free demo mode, exercising the exact same agent loop, hooks, interrupt
-  and resume paths — and it is explicitly *not* evidence of general problem-solving.
-* **A generalization evaluator.** `culprit evaluate --scenario fraud` runs the real model on the
-  second repository (which the offline policy provably knows nothing about), then independently
-  re-measures the fix branch and re-runs the project's tests before writing `evaluation.json`.
-* **Product layer.** FastAPI + server-sent events + a single-page dashboard; a Typer CLI with a rich
-  live timeline; a `RunManager` that persists runs (`run.json`, `events.jsonl`, `trace.jsonl`,
-  session, worktrees, PR, report); adapters for the metric store, GitHub and Slack with local
-  fallbacks; a Dockerfile (linux/arm64) and `BedrockAgentCoreApp` entrypoint for AgentCore Runtime.
+## How we used Codex
+Codex reviewed the existing implementation, checked the handoff commit, fixed isolation of per-run approval settings and Windows execution issues, ran the complete tests, independently scored the recorded demonstration, and prepared the diagram, recording and submission materials. The existing project was retained rather than redesigned.
 
-## Challenges we ran into
+## Testing instructions
+Clone the public repository and follow the Linux/macOS or Windows commands in the README. Use `CULPRIT_MODEL_PROVIDER=scripted` for a reproducible, credential-free integration test. Run `pytest -q`, then generate the churn demo and start the dashboard with `culprit serve`. The demo pauses before the local PR; approve in the dashboard to complete it. Run `culprit evaluate --scenario churn` to reproduce the independent offline scoring. For actual model validation, configure a provider, run `culprit doctor`, then `culprit evaluate --scenario fraud`.
 
-* **Making experiments trustworthy.** Fast-config numbers differ from nightly full-config numbers, so
-  the agent must calibrate on the known-good and known-bad commits before classifying candidates.
-  Encoding that as method, not as a hard-coded rule, kept the loop model-driven.
-* **Resuming across processes.** The approval may come hours later from a different process. Strands
-  sessions plus a persisted run record made this work, but every tool had to be re-bindable to a
-  fresh context (experiment cache, fix branch, worktrees) without losing state.
-* **A regression that is real but subtle.** We needed a bug that trains fine, passes the existing
-  smoke test, reads like a reasonable refactor, and reliably tanks the metric. Order-dependent
-  categorical encoding is exactly the kind of thing that slips through review.
-* **Safe git automation.** Detached worktrees per commit, a separate worktree for the fix branch, and a
-  sequential tool executor so concurrent tools can never fight over a checkout.
+The source, generated data/scenarios and offline demonstration remain freely available to judges. A hosted live application is not currently provided.
 
-## Accomplishments that we're proud of
-
-* A workflow that does the whole job end to end — investigation, verified fix, guard test, PR,
-  notification, report — and asks a human exactly once (verified end to end with the deterministic
-  policy; real-model results: see the validation log).
-* A human-approval flow that survives process restarts, built entirely from Strands primitives.
-* Two reproducible scenarios: one command each rebuilds a repository, its history and real nightly
-  metrics — and the second one is deliberately unsolvable by our own test fixture.
-* 47 tests covering the full golden path (interrupt → resume → report) and the evaluator, without any
-  credentials.
-* An evaluation harness that scores the agent by re-running experiments, not by reading its report.
-* It feels like a product: a dashboard you would actually leave open on a Monday morning.
-
-## What we learned
-
-* Strands' hook and interrupt system is a genuinely good abstraction for consequential actions: the
-  approval logic lives in one small class, not scattered through tools.
-* "Tools return data, the model draws conclusions" produces better agents than clever tools. Our
-  tools got simpler over the build, and the agent got better.
-* Deterministic policy models are a superpower for testing agentic systems — you can test the loop,
-  the hooks and the resume path exactly, then swap the real model in for the demo.
-* They are also a trap: a scripted fixture that "solves" your demo proves nothing about the model.
-  Keeping a second scenario the fixture cannot solve, and scoring the real model on it by
-  re-measurement, is what turns a demo into evidence.
-
-## What's next
-
-* Metric-store adapters for MLflow, Weights & Biases and SageMaker Experiments (the interface is one
-  method).
-* A "suspicious improvement" mode: when a metric jumps *up* implausibly, investigate for leakage.
-* Run experiments on AgentCore Code Interpreter / SageMaker instead of the local worktree, for
-  expensive training jobs.
-* A GitHub Action that runs Culprit automatically when the nightly job regresses.
-* Persist run state in S3 (`S3SessionManager`) so approvals can span AgentCore sessions.
+## Architecture
+Upload `architecture-final.png`. It shows the nightly trigger, Strands agent, experiment loop, verification and human approval boundary. It accurately labels the AgentCore status.
 
 ## Built with
+Python, Strands Agents SDK, Amazon Bedrock, FastAPI, Git, scikit-learn, pandas, NumPy, Pydantic, Typer.
 
-Python · Strands Agents SDK · Amazon Bedrock (Claude Sonnet) · Amazon Bedrock AgentCore Runtime ·
-FastAPI · Server-Sent Events · Pydantic · Typer · Rich · scikit-learn · pandas · git · Docker ·
-OpenTelemetry
+## Official form fields
+- Project name: Culprit
+- Track: Professional Agents
+- Public repository: https://github.com/danialmukash-cell/culprit
+- Architecture: architecture-final.png
+- Video: culprit-demo.mp4; upload publicly to YouTube or Vimeo and enter the resulting URL.
+- Submitter type: **user must provide** Individual / Team of Individuals / Organization.
+- Country of residence: **user must provide**; do not infer from language or timezone.
+- AWS Builder ID: **user must provide**.
+- Optional live demo: leave blank.
+- Optional AWS Builder article: publication-ready draft supplied; no published URL is claimed.
+- Eligibility, ownership and agreement to the official rules: **user confirmation required before final submission**.
 
-## Try it
+## Sources checked
+Official requirements and rules were fetched from the Devpost connector on September 12, 2026:
+- https://agentsforhumans.devpost.com/rules
+- https://agentsforhumans.devpost.com/resources
+- Deadline: September 15, 2026 at 00:00 UTC (05:00 Asia/Qyzylorda).
 
-```bash
-pip install -e ".[dev]" && culprit demo init && culprit serve --open
-```
-
-(Offline mode without AWS credentials: `CULPRIT_MODEL_PROVIDER=scripted`.)
+## Status
+Prepared materials; **not submitted to Devpost**. Real-model validation and a public YouTube/Vimeo video URL are still missing, along with the user's required form data and final attestations.

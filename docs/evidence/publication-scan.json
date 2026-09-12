@@ -1,0 +1,7 @@
+{
+  "scope": "all reachable historical Git blobs",
+  "blobs_checked": 94,
+  "findings": [],
+  "large_files_over_10MB": [],
+  "note": "Pattern scan plus manual configuration review; not a guarantee of absence of secrets."
+}

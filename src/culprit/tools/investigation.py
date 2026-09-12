@@ -31,6 +31,16 @@ MAX_FILE_CHARS = 12_000
 MAX_DIFF_CHARS = 7_000
 
 
+def quote_arg(value: str) -> str:
+    """Quote a template argument for the platform shell used by subprocess."""
+    if os.name == "nt":
+        quoted = subprocess.list2cmdline([value])
+        if not quoted.startswith('"') and any(c in value for c in '&|<>^()'):
+            quoted = '"' + quoted + '"'
+        return quoted
+    return shlex.quote(value)
+
+
 def render_command(template: str, **substitutions: str) -> str:
     """Substitute ``{name}`` placeholders without interpreting any other braces in the command.
 
@@ -201,6 +211,8 @@ class InvestigationTools:
     # ------------------------------------------------------------------------------------------
     def _python_shim_path(self) -> Path:
         """A tiny bin dir mapping ``python`` to the current interpreter so target projects run in our env."""
+        if os.name == "nt":
+            return Path(sys.executable).parent
         if self._shim_dir is None:
             shim = self.ctx.run_dir / "bin"
             shim.mkdir(exist_ok=True)
@@ -232,10 +244,18 @@ class InvestigationTools:
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                proc.kill()
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                    capture_output=True, timeout=10,
+                )
+                if proc.poll() is None:
+                    proc.kill()
+            else:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
             proc.communicate()
             raise
         return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
@@ -287,7 +307,7 @@ class InvestigationTools:
         metrics_dir.mkdir(exist_ok=True)
         out_path = metrics_dir / f"{sha.replace('+', '-')[:16]}-{config}-{int(time.time() * 1000)}.json"
         command = render_command(
-            project.experiment_command, config=shlex.quote(config), out=shlex.quote(str(out_path))
+            project.experiment_command, config=quote_arg(config), out=quote_arg(str(out_path))
         )
         timeout = min(project.experiment_timeout_s, self.ctx.settings.experiment_timeout_s)
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shlex
+import os
 import subprocess
 import sys
 import tempfile
@@ -33,7 +33,7 @@ from culprit.context import load_project_config
 from culprit.models import MetricRun, RunStatus
 from culprit.service import RunManager
 from culprit.settings import Settings
-from culprit.tools.investigation import render_command
+from culprit.tools.investigation import quote_arg, render_command
 
 
 def _metric_store(repo: Path, project) -> JsonMetricStore:
@@ -54,12 +54,13 @@ def record_nightly(repo: Path | str, config: str | None = None, run_id: str | No
         try:
             out = Path(tmp) / "metrics.json"
             command = render_command(
-                project.experiment_command, config=shlex.quote(config), out=shlex.quote(str(out))
+                project.experiment_command, config=quote_arg(config), out=quote_arg(str(out))
             )
-            shim = Path(tmp) / "bin"
-            shim.mkdir()
-            (shim / "python").symlink_to(sys.executable)
-            import os
+            shim = Path(sys.executable).parent
+            if os.name != "nt":
+                shim = Path(tmp) / "bin"
+                shim.mkdir()
+                (shim / "python").symlink_to(sys.executable)
 
             env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ.get('PATH', '')}"}
             proc = subprocess.run(

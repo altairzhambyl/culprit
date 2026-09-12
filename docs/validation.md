@@ -1,3 +1,5 @@
+> Historical handoff below. See [release-review.md](release-review.md) for the subsequent September 13 independent verification and current limitations.
+
 # Validation status
 
 This page is the single source of truth for **what has actually been executed** and what has not.

@@ -159,6 +159,7 @@ class RunRecord(BaseModel):
     created_at: str = Field(default_factory=utcnow_iso)
     updated_at: str = Field(default_factory=utcnow_iso)
     model: str = ""
+    auto_approve: bool = False
     task: str = ""
     warnings: list[str] = Field(default_factory=list)
     experiments: list[ExperimentResult] = Field(default_factory=list)

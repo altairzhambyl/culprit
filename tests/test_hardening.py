@@ -78,7 +78,7 @@ def test_no_metrics_json_is_a_clear_failure_without_retry_storm(ctx: Investigati
 
 
 def test_timeout_kills_the_process_tree(ctx: InvestigationContext):
-    ctx.project.experiment_command = "sh -c 'sleep 30; echo {}'"
+    ctx.project.experiment_command = 'python -c "import time; time.sleep(30)"'
     ctx.project.experiment_timeout_s = 1
     ctx.settings.experiment_timeout_s = 1
     started = time.time()
@@ -223,9 +223,8 @@ def test_dirty_working_tree_is_reported_and_left_alone(demo_repo, offline_settin
     readme.write_text(original + "\nlocal uncommitted note\n")
     try:
         mgr = RunManager(offline_settings)
-        record = mgr.create_run(repo)
+        record = mgr.create_run(repo, auto_approve=True)
         assert any("uncommitted changes" in w for w in record.warnings)
-        offline_settings.auto_approve = True
         record = mgr.start(record.run_id, background=False)
         assert record.status == RunStatus.COMPLETED, record.error
         assert readme.read_text().endswith("local uncommitted note\n")  # the user's edit survived untouched
@@ -249,3 +248,32 @@ def test_demo_force_recreates_generated_repositories(tmp_path: Path):
     first = generate_scenario("churn", dest, quiet=True)
     second = generate_scenario("churn", dest, force=True, quiet=True)
     assert first["culprit"] == second["culprit"]
+
+
+def test_experiment_output_path_with_spaces(ctx):
+    ctx.run_dir = ctx.run_dir / "a space in the path"
+    ctx.run_dir.mkdir(parents=True)
+    ctx.project.experiment_command = (
+        "python -c \"import json,sys; open(sys.argv[1], 'w').write(json.dumps({'f1': 0.9}))\" {out}"
+    )
+    result = InvestigationTools(ctx).run_experiment("HEAD")
+    assert result["status"] == "ok", result
+    assert result["metrics"]["f1"] == 0.9
+
+
+def test_save_retries_a_temporary_windows_sharing_error(ctx, monkeypatch):
+    original = Path.replace
+    attempts = []
+
+    def temporarily_locked(path, target):
+        attempts.append(path)
+        if len(attempts) == 1:
+            error = PermissionError("temporary reader")
+            error.winerror = 32
+            raise error
+        return original(path, target)
+
+    monkeypatch.setattr(Path, "replace", temporarily_locked)
+    ctx.save()
+    assert len(attempts) == 2
+    assert RunRecord.model_validate_json((ctx.run_dir / "run.json").read_text()).run_id == ctx.record.run_id

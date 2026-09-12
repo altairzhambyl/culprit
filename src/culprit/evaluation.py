@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
+import os
 import subprocess
 import sys
 import time
@@ -23,7 +23,7 @@ from culprit.demo.scenarios import generate_scenario, get_scenario
 from culprit.models import RunRecord, RunStatus
 from culprit.service import RunManager
 from culprit.settings import Settings
-from culprit.tools.investigation import render_command
+from culprit.tools.investigation import quote_arg, render_command
 
 _PYTHON_SHIM_DIR: Path | None = None
 
@@ -31,6 +31,8 @@ _PYTHON_SHIM_DIR: Path | None = None
 def _python_shim() -> Path:
     """Ensure ``python`` resolves to the current interpreter for the project's commands."""
     global _PYTHON_SHIM_DIR
+    if os.name == "nt":
+        return Path(sys.executable).parent
     if _PYTHON_SHIM_DIR is None:
         shim = Path(sys.prefix) / "culprit-shim"
         try:
@@ -66,8 +68,8 @@ def _measure(repo: Path, ref: str, project: dict[str, Any], scratch: Path) -> fl
         out = wt / ".culprit-eval-metrics.json"
         cmd = render_command(
             project["experiment_command"],
-            config=shlex.quote(project["default_config"]),
-            out=shlex.quote(str(out)),
+            config=quote_arg(project["default_config"]),
+            out=quote_arg(str(out)),
         )
         proc = _run_in(wt, cmd, timeout=int(project.get("experiment_timeout_s", 600)))
         if proc.returncode != 0 or not out.exists():
@@ -267,6 +269,7 @@ def score_run(record: RunRecord, truth: dict[str, Any], scenario_key: str, run_d
         and culprit_correct
         and verified["culprit_bracketed_by_experiments"]
         and verified["metric_recovered"]
+        and result["guard_test_added"]
         and (verified["tests_pass_on_fix_branch"] in (True, None))
     )
     return result
