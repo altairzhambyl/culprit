@@ -61,10 +61,11 @@ git clone <this repo> && cd culprit
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q                                   # 47 tests, no credentials needed
+pytest -q                                   # 64 tests, no credentials needed
 
 culprit demo init                           # churn-model: the golden path
 culprit demo init-secondary                 # fraud-risk: the unseen regression
+CULPRIT_MODEL_PROVIDER=scripted scripts/nightly.sh   # autonomous trigger demo, offline (see below)
 
 # Real model (Amazon Bedrock; default model = Strands' default Claude Sonnet)
 export AWS_REGION=us-west-2                 # + AWS credentials with bedrock:InvokeModel*
@@ -104,10 +105,40 @@ the agent's fix branch and the project's tests, then writes `runs/<run_id>/evalu
 number of experiments, the predicted vs. expected culprit, the explanation, files changed, recovered
 metric, guard-test status, tool calls, token usage and duration.
 
-**Current status:** the evaluator and both scenarios are verified with the offline policy (which,
-as expected, isolates the fraud-risk culprit by bisection but cannot fix it). **A real-model run has
-not yet been executed by the authors** — see [`docs/validation.md`](docs/validation.md) for the exact
-list of verified and unverified claims and a results log to fill in from `evaluation.json`.
+A run only counts as a success when the culprit is correct **and bracketed by experiments the agent
+actually ran** (culprit and its parent both measured), the evaluator's own re-measurement shows the
+metric recovered, and the project's tests pass on the fix branch. A fabricated report cannot pass.
+
+### Status — what is verified and what is not
+
+**VERIFIED (executed in this repository, reproducible with `pytest -q`):** the complete agent loop on
+the real Strands `Agent` with the deterministic offline policy — bisection, fix, guard test, approval
+interrupt, cross-process resume, structured report, PR/notification adapters, CLI, dashboard API,
+AgentCore entrypoint contract, autonomous trigger, hardening (timeouts, bad refs, loops, dirty trees,
+provider preflight); both scenarios' regressions are real and silent; the evaluator scores the offline
+policy correctly on both (churn: success; fraud: correct bisection, no fix, `success: false`).
+
+**IMPLEMENTED BUT NOT EXTERNALLY VERIFIED:** any real-model run (Bedrock Claude on either scenario),
+the AgentCore deployment, GitHub/Slack adapters against live endpoints, the scheduled GitHub Actions
+example. The build environment could not reach any AWS endpoint (`docs/evidence/aws-access-attempt.md`).
+`docs/validation.md` has the full list and a results log to fill in from `evaluation.json`.
+
+## Nobody has to notice the regression first
+
+The hackathon story does not start with an engineer typing a command. It starts with a nightly job:
+
+```bash
+culprit record-nightly <repo>          # what the nightly job does: evaluate HEAD, append to the metric store
+culprit watch <repo> --once            # regression above threshold? start Culprit for that good→bad window (once)
+```
+
+`culprit watch` remembers which windows it has handled (`runs/_watch/`), so a cron entry or a scheduled
+workflow can call it every night idempotently. The human is contacted **only** when the run pauses for
+approval: the watcher posts the approval instructions (Slack webhook if configured, otherwise a local
+notification file) and exits with status 3. `scripts/nightly.sh` reproduces the whole chain on the demo
+repository — yesterday's merges, tonight's nightly, the trigger, the pause — in about a minute offline.
+`.github/workflows/nightly-culprit.yml` shows the same chain as a scheduled GitHub Actions job
+(an example; not executed by the authors).
 
 ## Point it at your own repository
 
@@ -136,7 +167,8 @@ never blocks on credentials.
 | `Agent` + `@tool` (12 tools, instance-bound) | `culprit/tools/investigation.py` | Real work: git worktrees, subprocess experiments, file edits, PRs |
 | **Interrupts** from a `BeforeToolCallEvent` hook and from a tool via `ToolContext.interrupt` | `culprit/hooks/approval.py`, `ask_human` | Human approval for consequential actions; questions only when judgment is needed |
 | `FileSessionManager` | `culprit/agents/investigator.py` | Resume an interrupted run from another process (CLI, web, AgentCore) |
-| Hooks: `BeforeToolCallEvent`, `AfterToolCallEvent`, `Before/AfterModelCallEvent`, `MessageAddedEvent` | `culprit/hooks/` | Budget guard-rail (`cancel_tool`), tracing, live UI events |
+| Hooks: `BeforeToolCallEvent`, `AfterToolCallEvent`, `Before/AfterModelCallEvent`, `MessageAddedEvent` | `culprit/hooks/` | Budget and loop guard-rails (`cancel_tool` with instructions), tracing, live UI events |
+| `SlidingWindowConversationManager(window_size=200, pin_first=1)` | `investigator.py` | Long investigations keep the task and metric history in context |
 | `structured_output_model=IncidentReport` | `culprit/service.py` | Typed, validated post-mortem |
 | `SequentialToolExecutor`, `trace_attributes`, built-in model retries | `investigator.py` | Safe git access, observability, resilience |
 | Custom `Model` provider | `culprit/agents/scripted_model.py` | Deterministic integration-test fixture / offline demo (churn only) |
@@ -148,19 +180,21 @@ never blocks on credentials.
 src/culprit/
   agents/        investigator.py (agent assembly), prompts.py, scripted_model.py (offline test policy)
   tools/         investigation.py — the 12 tools
-  hooks/         approval.py (interrupts), budget.py, tracing.py
+  hooks/         approval.py (interrupts), budget.py, loop_guard.py, tracing.py
   adapters/      metric_store.py, github.py, slack.py
   demo/          builder.py (shared plumbing), generator.py + project.py (churn),
                  fraud_generator.py + fraud_project.py (fraud-risk), scenarios.py (registry)
   evaluation.py  generalization evaluator (culprit evaluate)
+  automation.py  nightly record + regression trigger (culprit record-nightly / culprit watch)
   web/           app.py (FastAPI + SSE) and static/index.html (dashboard)
   service.py     RunManager: lifecycle, persistence, resume, reporting
   cli.py         Typer CLI
   agentcore_app.py  Bedrock AgentCore Runtime entrypoint
 config/          example .culprit.yaml
-docs/            architecture, validation status, demo script, Devpost copy, build story, AgentCore deployment
+docs/            architecture, validation status, ASTRA handoff, demo script, Devpost copy, build story, AgentCore deployment, evidence/
 examples/        sample incident report, PR, metric history (from the offline policy)
-tests/           47 tests incl. the full golden path with interrupt + resume, both scenarios, the evaluator
+scripts/         nightly.sh (autonomous trigger demo), demo.sh
+tests/           64 tests: golden path with interrupt + resume, both scenarios, evaluator, hardening, automation
 ```
 
 ## Deploy to Amazon Bedrock AgentCore
@@ -176,8 +210,9 @@ curl -N -X POST localhost:8080/invocations -H 'content-type: application/json' \
      -d '{"action": "respond", "run_id": "<run id>", "decision": "approve"}'
 ```
 
-Container build and deployment steps are in [`docs/deploy-agentcore.md`](docs/deploy-agentcore.md)
-(the contract is exercised locally in tests; an actual AgentCore deployment has not been performed yet).
+Container build and deployment steps are in [`docs/deploy-agentcore.md`](docs/deploy-agentcore.md).
+The contract is exercised locally in tests; **an actual AgentCore deployment has not been performed** —
+the build environment had no route to AWS (see `docs/evidence/aws-access-attempt.md`).
 
 ### Hosting the dashboard as a live demo
 
@@ -188,7 +223,7 @@ shell command, so a public instance must never run strangers' repos.
 
 ## Documentation
 
-* [Validation status](docs/validation.md) · [Architecture](docs/architecture.md) ·
+* [Reviewer handoff](docs/ASTRA_HANDOFF.md) · [Validation status](docs/validation.md) · [Architecture](docs/architecture.md) ·
   [Demo script](docs/demo-script.md) · [Devpost submission](docs/devpost-submission.md) ·
   [Build story](docs/build-story.md) · [AgentCore deployment](docs/deploy-agentcore.md) ·
   [Status checklist](TODO_CHECKLIST.md)

@@ -24,7 +24,9 @@ Have a second browser tab open with `demo/churn-model` in your git viewer (or a 
 
 ## 0:00 — Hook (15–20 s)
 
-*Screen: dashboard, empty state; then the nightly metric chart after clicking Investigate.*
+*Screen: a terminal running `scripts/nightly.sh` (the nightly job records the bad metric and the
+watcher starts Culprit by itself), then the dashboard picking up the running investigation. If you
+prefer to start from the dashboard, click Investigate instead — the rest of the script is unchanged.*
 
 > "This is a real ML repo. Every test is green. But last night its nightly F1 fell from 0.83 to 0.66,
 > and five pull requests merged yesterday. Somewhere in there is the one that broke the model.

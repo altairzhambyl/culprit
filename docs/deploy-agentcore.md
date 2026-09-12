@@ -6,9 +6,14 @@ Culprit's `culprit.agentcore_app` module implements the AgentCore Runtime servic
 * `GET /ping` — health
 * port **8080**, container platform **linux/arm64**
 
-The same module runs locally, which is how the contract is exercised in this repository. An actual
-deployment to AgentCore has **not** been performed by the authors yet; the steps below follow the
-AgentCore documentation and should be treated as untested until you run them.
+The same module runs locally, which is how the contract is exercised in this repository (tests and a
+manual `curl` session with the offline policy). **An actual deployment to AgentCore has not been
+performed.** Exact blocker at the time of writing: the build environment's egress policy denied every
+AWS endpoint (STS, Bedrock, AgentCore control plane — see `evidence/aws-access-attempt.md`) and no real
+AWS credentials were available, so `agentcore deploy` / `create_agent_runtime` could not even
+authenticate. The steps below follow the AgentCore CLI (`@aws/agentcore`, v0.29 at the time of writing)
+and service documentation; treat them as untested until you run them, and record the outcome in
+`validation.md`.
 
 ## 1. Try the contract locally
 

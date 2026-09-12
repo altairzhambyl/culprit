@@ -37,26 +37,35 @@ Honest state of the project at submission time. Legend: ✅ working · 🟡 part
   approves the PR as the human, then independently re-measures the fix branch and re-runs the
   project's tests; writes `runs/<id>/evaluation.json`. Verified with the offline policy on both
   scenarios (churn → success; fraud → correct bisection, no fix, success=false).
-- Test suite: 47 tests (tools, adapters, hooks, scripted model, golden path with cross-process
-  resume, rejection path, auto-approve, budget, web API, both scenarios, evaluator). Runs in ~2
-  minutes without credentials.
+- Hardening: process-group timeouts, missing/malformed metric JSON errors, stale worktree recovery,
+  edit/write/PR guards, loop guard (repeated calls + global cap), provider preflight with no silent
+  fallback, dirty-tree warnings, `--force` safety marker, `culprit clean`, report-phase retry,
+  `max_tokens` handling, brace-safe command templates.
+- Autonomous trigger: `culprit record-nightly`, `culprit watch [--once]` with per-window dedupe and
+  approval notification; `scripts/nightly.sh` reproduces the chain offline; Actions example workflow.
+- Test suite: 64 tests (tools, adapters, hooks, scripted model, golden path with cross-process
+  resume, rejection path, auto-approve, budget, web API, both scenarios, evaluator, hardening,
+  automation). Runs in ~3 minutes without credentials.
 - Docs: README, architecture (Mermaid + PNG/SVG), demo script, Devpost copy, build story, AgentCore
   deployment guide, examples.
 
 ## Partially working 🟡
 
 - **Real-model run (Bedrock Claude) — the project's central claim.** The agent, prompts and tools are
-  built for it, but no AWS credentials were available while building, so **no real-model run has been
-  executed**: neither the churn golden path nor the unseen fraud-risk scenario. Everything about
-  "the model investigates" is therefore a design statement until `culprit evaluate --scenario fraud`
-  has been run and its `evaluation.json` recorded in `docs/validation.md`.
+  built for it, but the build environment could reach no AWS endpoint and had no real credentials
+  (`docs/evidence/aws-access-attempt.md`), so **no real-model run has been executed**: neither the churn
+  golden path nor the unseen fraud-risk scenario. Everything about "the model investigates" is a
+  design statement until `culprit evaluate --scenario fraud` has been run and its `evaluation.json`
+  recorded in `docs/validation.md`.
 - **GitHub PR adapter.** Implemented (push + REST `POST /repos/{owner}/{repo}/pulls`), falls back to
   the local adapter on any failure; not executed against a live repository.
 - **Slack adapter.** Implemented (incoming webhook), not executed against a live workspace.
 - **Metric store.** Only the JSON implementation exists; MLflow/W&B/SageMaker adapters are a
   one-method `Protocol` away but not written.
-- **AgentCore state across sessions.** Runs live in the session's filesystem; approvals must reuse the
+- **AgentCore deployment.** Entrypoint contract verified locally; `agentcore deploy` blocked by the
+  same egress/credentials situation. Runs live in the session's filesystem; approvals must reuse the
   same `runtimeSessionId`. `S3SessionManager` + shared run storage documented, not implemented.
+- **Scheduled GitHub Actions example.** YAML validated only; never executed.
 
 ## Missing ❌
 
