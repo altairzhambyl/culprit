@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "culprit"
+version = "0.1.0"
+description = "Culprit — an ML regression investigator built on Strands Agents. Finds the commit that broke your model, proves it by re-running experiments, fixes it, and asks you once before opening the PR."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Culprit contributors" }]
+keywords = ["strands-agents", "aws", "bedrock", "agentcore", "mlops", "regression", "bisect"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "strands-agents>=1.55",
+  "strands-agents-tools>=0.2",
+  "pydantic>=2.6",
+  "pyyaml>=6.0",
+  "typer>=0.12",
+  "rich>=13.7",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "sse-starlette>=2.0",
+  "httpx>=0.27",
+  "python-dotenv>=1.0",
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "scikit-learn>=1.4",
+]
+
+[project.optional-dependencies]
+agentcore = ["bedrock-agentcore>=0.1"]
+anthropic = ["strands-agents[anthropic]"]
+openai = ["strands-agents[openai]"]
+dev = ["pytest>=8.0", "pytest-timeout>=2.3", "ruff>=0.4"]
+
+[project.scripts]
+culprit = "culprit.cli:app"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+culprit = ["web/static/*", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+timeout = 300
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

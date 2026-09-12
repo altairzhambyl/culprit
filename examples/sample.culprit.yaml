@@ -1,0 +1,10 @@
+# Culprit configuration: how to reproduce this project's evaluation metric.
+metric: f1
+higher_is_better: true
+regression_threshold: 0.03
+experiment_command: "python -m churn.train --config {config} --out {out}"
+test_command: "python -m pytest -q"
+metrics_history: "nightly/metrics_history.json"
+default_config: smoke
+experiment_timeout_s: 300
+main_branch: main

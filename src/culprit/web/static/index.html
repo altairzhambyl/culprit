@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culprit</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f4f1; --surface: #fcfcfb; --surface-2: #f0efeb; --border: #dedcd5;
+    --text: #0b0b0b; --text-2: #52514e; --muted: #8a8880;
+    --accent: #2a78d6; --accent-soft: rgba(42,120,214,.12);
+    --good: #0ca30c; --bad: #d03b3b; --warn: #b97a00; --warn-bg: rgba(250,178,25,.14);
+    --good-bg: rgba(12,163,12,.12); --bad-bg: rgba(208,59,59,.12);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text: #f5f5f0; --text-2: #c3c2b7; --muted: #8b8a82;
+    --accent: #3987e5; --accent-soft: rgba(57,135,229,.18);
+    --good: #2fbf2f; --bad: #e66767; --warn: #fab219; --warn-bg: rgba(250,178,25,.12);
+    --good-bg: rgba(47,191,47,.14); --bad-bg: rgba(230,103,103,.14);
+    --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
+  a { color: var(--accent); }
+  button { font: inherit; cursor: pointer; }
+  code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+
+  /* layout */
+  .topbar { display: flex; align-items: center; gap: 14px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: .2px; }
+  .brand .mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; color: white; font-family: var(--mono); font-size: 13px; }
+  .brand small { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 6px; }
+  .topbar .spacer { flex: 1; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: 12px; white-space: nowrap; }
+  .badge.dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .badge.running::before { background: var(--accent); animation: pulse 1.2s infinite; }
+  .badge.awaiting_human::before { background: var(--warn); animation: pulse 1.2s infinite; }
+  .badge.completed::before { background: var(--good); }
+  .badge.failed::before { background: var(--bad); }
+  .badge.reporting::before { background: var(--accent); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  .iconbtn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px; color: var(--text-2); }
+  .iconbtn:hover { background: var(--surface-2); }
+
+  .layout { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 49px); }
+  .sidebar { border-right: 1px solid var(--border); background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .main { padding: 18px 22px 40px; min-width: 0; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { border-right: 0; border-bottom: 1px solid var(--border); } }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .card > .card-h { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; }
+  .card > .card-h .sub { color: var(--muted); font-weight: 400; margin-left: auto; font-size: 12px; }
+  .card > .card-b { padding: 12px 14px; }
+
+  label { display: block; font-size: 12px; color: var(--text-2); margin: 8px 0 4px; }
+  input[type=text], textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  textarea { min-height: 54px; resize: vertical; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-weight: 600; }
+  .btn:hover { filter: brightness(1.05); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn.good { background: var(--good); border-color: var(--good); color: white; }
+  .btn.bad { background: transparent; border-color: var(--bad); color: var(--bad); }
+  .btn.sm { padding: 4px 9px; font-size: 12px; font-weight: 500; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  .runs { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; }
+  .run { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--surface); }
+  .run:hover { background: var(--surface-2); }
+  .run.active { border-color: var(--accent); background: var(--accent-soft); }
+  .run .id { font-family: var(--mono); font-size: 12px; }
+  .run .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+
+  .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+  .empty h2 { font-weight: 600; color: var(--text-2); margin: 0 0 6px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .9fr); gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+  .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .runhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .runhead h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  .runhead .repo { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+  .kpi .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .kpi .v { font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .kpi .v small { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .kpi .v.good { color: var(--good); } .kpi .v.bad { color: var(--bad); }
+
+  /* approval banner */
+  .approval { border: 1px solid var(--warn); background: var(--warn-bg); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
+  .approval h3 { margin: 0 0 4px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .approval .body { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 10px 0; max-height: 300px; overflow: auto; }
+  .approval .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .approval input[type=text] { flex: 1; min-width: 180px; }
+
+  /* timeline */
+  .timeline { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow: auto; padding: 12px 14px; }
+  .ev { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; }
+  .ev .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; background: var(--surface-2); color: var(--text-2); }
+  .ev.thought .ic { background: transparent; }
+  .ev.thought .tx { color: var(--text-2); font-style: italic; padding-top: 2px; }
+  .ev.tool .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .ev.tool .name { font-family: var(--mono); font-weight: 600; color: var(--accent); }
+  .ev.tool .args { font-family: var(--mono); color: var(--muted); font-size: 12px; }
+  .ev.tool .res { margin-top: 4px; font-size: 12.5px; }
+  .ev.tool .res.ok { color: var(--text-2); } .ev.tool .res.err { color: var(--bad); } .ev.tool .res.cancel { color: var(--warn); }
+  .ev .metric { font-family: var(--mono); font-weight: 700; }
+  .ev .metric.good { color: var(--good); } .ev .metric.bad { color: var(--bad); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  details pre { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; margin-top: 6px; max-height: 260px; overflow: auto; }
+  .diff { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; margin-top: 6px; max-height: 320px; overflow: auto; font-family: var(--mono); font-size: 12px; }
+  .diff .add { color: var(--good); } .diff .del { color: var(--bad); } .diff .hunk { color: var(--accent); }
+  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .ev.sys .tx { color: var(--muted); font-size: 12px; }
+  .ev.err .tx { color: var(--bad); }
+  .ev.decision .tx { font-weight: 600; }
+
+  /* bisect board */
+  .commit { display: grid; grid-template-columns: 78px 1fr auto; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--border); }
+  .commit:last-child { border-bottom: 0; }
+  .commit .sha { font-family: var(--mono); font-size: 12px; }
+  .commit .subj { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .commit .subj small { color: var(--muted); }
+  .state { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+  .state.good { color: var(--good); border-color: var(--good); background: var(--good-bg); }
+  .state.bad { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
+  .state.culprit { color: white; background: var(--bad); border-color: var(--bad); }
+  .state.testing { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .state.fixed { color: white; background: var(--good); border-color: var(--good); }
+  .boundary { color: var(--muted); font-size: 11.5px; padding: 4px 0; display: flex; gap: 8px; align-items: center; }
+  .boundary .sha { font-family: var(--mono); }
+
+  /* chart */
+  .chart { width: 100%; height: 170px; display: block; }
+  .chart .grid line { stroke: var(--border); stroke-width: 1; }
+  .chart .axis text { fill: var(--muted); font-size: 10.5px; font-family: var(--mono); }
+  .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .pt { stroke: var(--surface); stroke-width: 2; }
+  .chart .pt.good { fill: var(--accent); } .chart .pt.bad { fill: var(--bad); } .chart .pt.fixed { fill: var(--good); }
+  .chart .base { stroke: var(--muted); stroke-dasharray: 3 4; stroke-width: 1; }
+  .chart .lbl { fill: var(--text-2); font-size: 11px; font-family: var(--mono); font-weight: 600; }
+  .chart .hit { fill: transparent; }
+  .tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; z-index: 20; font-family: var(--mono); }
+
+  table.exp { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.exp th, table.exp td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  table.exp th { color: var(--muted); font-weight: 500; font-size: 11.5px; }
+  table.exp td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* report */
+  .report { border-color: var(--good); }
+  .report .card-h { background: var(--good-bg); }
+  .md h1 { font-size: 16px; margin: 0 0 8px; } .md h2 { font-size: 14px; margin: 14px 0 6px; } .md h3 { font-size: 13px; margin: 12px 0 4px; }
+  .md p { margin: 6px 0; } .md ul { margin: 4px 0 4px 18px; padding: 0; } .md li { margin: 2px 0; }
+  .md table { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; } .md th, .md td { border: 1px solid var(--border); padding: 4px 8px; }
+  .md code { background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
+  .md hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+  .toast { position: fixed; bottom: 18px; right: 18px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--bad); padding: 10px 14px; border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.2); display: none; max-width: 420px; z-index: 30; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="mark">?!</span>Culprit <small>ML regression investigator · Strands Agents</small></div>
+  <div class="spacer"></div>
+  <span class="badge" id="modelBadge">model: …</span>
+  <button class="iconbtn" id="themeBtn" title="Toggle theme">◐</button>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div>
+      <div style="font-weight:600; margin-bottom:4px;">New investigation</div>
+      <div class="hint">Point Culprit at a git repository with a <code>.culprit.yaml</code>.</div>
+      <label>Repository path or URL</label>
+      <input type="text" id="repoInput" placeholder="demo/churn-model">
+      <div class="row" style="margin-top:6px;">
+        <button class="btn sm" id="useDemoBtn">Use demo repo</button>
+        <button class="btn sm" id="makeDemoBtn">Create demo repo</button>
+      </div>
+      <label>Metric (optional)</label>
+      <input type="text" id="metricInput" placeholder="f1">
+      <label>Extra instructions (optional)</label>
+      <textarea id="taskInput" placeholder="e.g. Five PRs merged yesterday; the nightly F1 dropped."></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn primary" id="startBtn">Investigate</button>
+        <span class="hint" id="startHint"></span>
+      </div>
+    </div>
+    <div>
+      <div class="row" style="justify-content:space-between; margin-bottom:6px;"><span style="font-weight:600;">Runs</span><button class="btn sm" id="refreshRuns">↻</button></div>
+      <div class="runs" id="runs"></div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="empty" id="empty">
+      <h2>No investigation selected</h2>
+      <div>Create the demo repository, then click <b>Investigate</b>. Culprit will read the nightly metrics, bisect the commits with real experiments, fix the regression, and ask you once before opening the PR.</div>
+    </div>
+    <div id="runView" hidden>
+      <div class="runhead">
+        <h1 id="runTitle"></h1>
+        <span class="badge dot" id="statusBadge"></span>
+        <span class="repo" id="runRepo"></span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="badge" id="usageBadge"></span>
+        <a class="btn sm" id="reportLink" target="_blank" hidden>report.md</a>
+        <a class="btn sm" id="prLink" target="_blank" hidden>pull request</a>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+      <div id="approval" hidden></div>
+      <div id="reportCard" hidden></div>
+
+      <div class="grid">
+        <div class="stack">
+          <div class="card">
+            <div class="card-h">Investigation timeline <span class="sub" id="timelineSub"></span></div>
+            <div class="timeline" id="timeline"></div>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <div class="card-h">Nightly metric <span class="sub" id="chartSub"></span></div>
+            <div class="card-b"><svg class="chart" id="chart" viewBox="0 0 520 170" preserveAspectRatio="none"></svg><div class="hint" id="chartHint"></div></div>
+          </div>
+          <div class="card">
+            <div class="card-h">Bisection board <span class="sub" id="boardSub"></span></div>
+            <div class="card-b" id="board"><div class="hint">Waiting for the candidate window…</div></div>
+          </div>
+          <div class="card">
+            <div class="card-h">Experiments <span class="sub" id="expSub"></span></div>
+            <div class="card-b" id="experiments"><div class="hint">No experiments yet.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  // ---------- theme ----------
+  const root = document.documentElement;
+  const applyTheme = (t) => { root.dataset.theme = t; try { localStorage.setItem('culprit-theme', t); } catch (e) {} };
+  let theme = null; try { theme = localStorage.getItem('culprit-theme'); } catch (e) {}
+  if (!theme) theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  applyTheme(theme);
+  document.getElementById('themeBtn').onclick = () => applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+
+  // ---------- helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const short = (sha) => (sha || '').slice(0, 7);
+  const fmt = (v) => (typeof v === 'number' ? v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : (v ?? '—'));
+  const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 6000); };
+  let apiToken = null; try { apiToken = localStorage.getItem('culprit-token'); } catch (e) {}
+  const api = async (path, opts, retry = true) => {
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiToken) headers['Authorization'] = 'Bearer ' + apiToken;
+    const r = await fetch(path, Object.assign({ headers }, opts || {}));
+    if (r.status === 401 && retry) {
+      const t = window.prompt('This Culprit instance is protected. Enter the API token (CULPRIT_API_TOKEN):');
+      if (t) { apiToken = t.trim(); try { localStorage.setItem('culprit-token', apiToken); } catch (e) {} return api(path, opts, false); }
+    }
+    if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch (e) {} throw new Error(m); }
+    return r.status === 204 ? null : r.json();
+  };
+  const md = (text) => {
+    // tiny markdown renderer (headings, bold, code, lists, tables, hr, paragraphs)
+    const inline = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>');
+    const lines = String(text || '').split('\n'); let out = [], i = 0;
+    while (i < lines.length) {
+      const l = lines[i];
+      if (/^#{1,3} /.test(l)) { const n = l.match(/^#+/)[0].length; out.push(`<h${n}>${inline(l.slice(n + 1))}</h${n}>`); i++; continue; }
+      if (/^---+$/.test(l.trim())) { out.push('<hr>'); i++; continue; }
+      if (/^\|/.test(l)) { const rows = []; while (i < lines.length && /^\|/.test(lines[i])) { rows.push(lines[i]); i++; }
+        const cells = rows.filter(r => !/^\|\s*-+/.test(r)).map(r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
+        out.push('<table>' + cells.map((r, k) => '<tr>' + r.map(c => `<${k ? 'td' : 'th'}>${inline(c)}</${k ? 'td' : 'th'}>`).join('') + '</tr>').join('') + '</table>'); continue; }
+      if (/^\s*[-*] /.test(l)) { const items = []; while (i < lines.length && /^\s*[-*] /.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*] /, '')); i++; } out.push('<ul>' + items.map(x => `<li>${inline(x)}</li>`).join('') + '</ul>'); continue; }
+      if (!l.trim()) { i++; continue; }
+      const para = []; while (i < lines.length && lines[i].trim() && !/^(#|\||---|\s*[-*] )/.test(lines[i])) { para.push(lines[i]); i++; }
+      out.push(`<p>${inline(para.join(' '))}</p>`);
+    }
+    return out.join('');
+  };
+
+  // ---------- state ----------
+  let config = {};
+  let current = null;      // run id
+  let record = null;       // run record
+  let es = null;           // EventSource
+  let lastSeq = 0;
+  const S = freshState();
+  function freshState() { return { events: [], metrics: null, regression: null, candidates: null, experiments: [], testing: {}, fixBranch: null, calib: {}, report: null, pr: null, interrupts: [], toolsOpen: {} }; }
+
+  // ---------- sidebar ----------
+  async function loadConfig() {
+    config = await api('/api/config');
+    $('modelBadge').textContent = 'model: ' + config.model;
+    $('repoInput').placeholder = config.demo_repo;
+    $('makeDemoBtn').textContent = config.demo_repo_exists ? 'Recreate demo repo' : 'Create demo repo';
+  }
+  async function loadRuns() {
+    const runs = await api('/api/runs');
+    const box = $('runs'); box.innerHTML = '';
+    if (!runs.length) box.innerHTML = '<div class="hint">No runs yet.</div>';
+    for (const r of runs) {
+      const div = document.createElement('div'); div.className = 'run' + (r.run_id === current ? ' active' : '');
+      div.innerHTML = `<div class="row" style="justify-content:space-between"><span class="id">${esc(r.run_id)}</span><span class="badge dot ${esc(r.status)}">${esc(r.status.replace('_', ' '))}</span></div>
+        <div class="meta"><span>${esc(r.metric)} · ${r.experiments} exp${r.culprit ? ' · culprit ' + esc(r.culprit) : ''}</span><span>${esc(r.created_at.slice(5, 16).replace('T', ' '))}</span></div>`;
+      div.onclick = () => openRun(r.run_id);
+      box.appendChild(div);
+    }
+  }
+  $('refreshRuns').onclick = loadRuns;
+  $('useDemoBtn').onclick = () => { $('repoInput').value = config.demo_repo; };
+  $('makeDemoBtn').onclick = async () => {
+    $('makeDemoBtn').disabled = true; $('startHint').textContent = 'building demo repo…';
+    try { const s = await api('/api/demo/init', { method: 'POST', body: JSON.stringify({ dest: 'demo/churn-model', force: true }) });
+      $('repoInput').value = s.path; $('startHint').textContent = `demo ready: nightly F1 ${s.f1_good} → ${s.f1_bad}`; config.demo_repo_exists = true; $('makeDemoBtn').textContent = 'Recreate demo repo';
+    } catch (e) { toast('demo init failed: ' + e.message); $('startHint').textContent = ''; }
+    $('makeDemoBtn').disabled = false;
+  };
+  $('startBtn').onclick = async () => {
+    const repo = $('repoInput').value.trim() || config.demo_repo;
+    $('startBtn').disabled = true; $('startHint').textContent = 'starting…';
+    try {
+      const r = await api('/api/runs', { method: 'POST', body: JSON.stringify({ repo, metric: $('metricInput').value.trim() || null, task: $('taskInput').value.trim() }) });
+      $('startHint').textContent = ''; await loadRuns(); openRun(r.run_id);
+    } catch (e) { toast('could not start: ' + e.message); $('startHint').textContent = ''; }
+    $('startBtn').disabled = false;
+  };
+
+  // ---------- run view ----------
+  async function openRun(id) {
+    if (es) { es.close(); es = null; }
+    current = id; Object.assign(S, freshState()); lastSeq = 0;
+    $('timeline').innerHTML = ''; $('board').innerHTML = '<div class="hint">Waiting for the candidate window…</div>'; $('experiments').innerHTML = '<div class="hint">No experiments yet.</div>';
+    $('approval').hidden = true; $('reportCard').hidden = true; $('chart').innerHTML = ''; $('chartHint').textContent = '';
+    for (const id of ['expSub', 'boardSub', 'chartSub', 'timelineSub']) $(id).textContent = '';
+    $('empty').hidden = true; $('runView').hidden = false;
+    record = await api('/api/runs/' + id);
+    renderHead();
+    const events = await api(`/api/runs/${id}/events`);
+    for (const ev of events) handle(ev, false);
+    afterBatch();
+    loadRuns();
+    if (['running', 'reporting', 'queued'].includes(record.status) || record.active) subscribe();
+  }
+  function subscribe() {
+    es = new EventSource(`/api/runs/${current}/stream?after=${lastSeq}`);
+    es.onmessage = (m) => { handle(JSON.parse(m.data), true); afterBatch(); };
+    es.addEventListener('done', async () => { es.close(); es = null; record = await api('/api/runs/' + current); renderHead(); renderApproval(); loadRuns(); });
+    es.onerror = () => { /* browser reconnects automatically; harmless */ };
+  }
+  function renderHead() {
+    $('runTitle').textContent = `Run ${record.run_id}`;
+    $('runRepo').textContent = record.repo_path;
+    const b = $('statusBadge'); b.className = 'badge dot ' + record.status; b.textContent = record.status.replace('_', ' ');
+    $('usageBadge').textContent = `${record.tool_calls} tool calls · ${record.model_calls} model calls` + (record.input_tokens ? ` · ${(record.input_tokens / 1000).toFixed(1)}k in / ${(record.output_tokens / 1000).toFixed(1)}k out tokens` : '');
+    $('reportLink').hidden = record.status !== 'completed'; $('reportLink').href = `/api/runs/${record.run_id}/report.md`;
+    const pr = record.pull_request; $('prLink').hidden = !(pr && pr.url); if (pr && pr.url) $('prLink').href = pr.mode === 'local' ? `/api/runs/${record.run_id}/pull_request.md` : pr.url;
+    renderKpis();
+  }
+  function renderKpis() {
+    const reg = S.regression, rep = S.report;
+    const fixExp = S.experiments.filter(e => S.fixBranch && e.ref === S.fixBranch && e.status === 'ok').slice(-1)[0];
+    const metric = (record && record.metric) || 'metric';
+    const spent = S.experiments.filter(e => !e.cached).length, max = config.max_experiments || 8;
+    const tiles = [
+      { k: `${metric} baseline`, v: reg ? fmt(reg.baseline_value) : '—', cls: '' },
+      { k: `${metric} regressed`, v: reg ? fmt(reg.regressed_value) : '—', cls: reg ? 'bad' : '', sub: reg ? ` <small>${reg.delta > 0 ? '+' : ''}${fmt(reg.delta)}</small>` : '' },
+      { k: `${metric} on fix branch`, v: fixExp ? fmt(fixExp.value) : (rep && rep.recovered_value != null ? fmt(rep.recovered_value) : '—'), cls: fixExp || (rep && rep.recovered_value != null) ? 'good' : '', sub: fixExp ? ' <small>fast config</small>' : '' },
+      { k: 'culprit', v: rep ? rep.culprit_commit : (boardCulprit() || '—'), cls: '' },
+      { k: 'experiments', v: `${spent}<small> / ${max} budget</small>`, cls: '' },
+    ];
+    $('kpis').innerHTML = tiles.map(t => `<div class="kpi"><div class="k">${esc(t.k)}</div><div class="v ${t.cls}">${t.v}${t.sub || ''}</div></div>`).join('');
+  }
+
+  // ---------- event handling ----------
+  function handle(ev, live) {
+    lastSeq = Math.max(lastSeq, ev.seq); S.events.push(ev); const d = ev.data;
+    switch (ev.kind) {
+      case 'metrics': S.metrics = d.runs; S.regression = d.regression; break;
+      case 'candidates': S.candidates = d.commits; S.boundaries = { good: d.good_ref, bad: d.bad_ref }; break;
+      case 'experiment_start': S.testing[d.sha] = true; break;
+      case 'experiment': delete S.testing[(d.sha || '').slice(0, 12)]; S.experiments.push(d); break;
+      case 'fix_started': S.fixBranch = d.branch; break;
+      case 'interrupt': S.interrupts = d.interrupts; if (record) record.status = 'awaiting_human'; break;
+      case 'decision': S.interrupts = []; break;
+      case 'pull_request': S.pr = d; if (record) record.pull_request = d; break;
+      case 'report': S.report = d.report; break;
+      case 'status': if (record) record.status = d.status; break;
+    }
+    if (ev.kind === 'tool_end' && record) record.tool_calls = (record.tool_calls || 0) + 1;
+    if (ev.kind === 'thinking' && record) record.model_calls = d.call;
+    renderEvent(ev);
+  }
+  function afterBatch() {
+    renderHead(); renderChart(); renderBoard(); renderExperiments(); renderApproval(); renderReport();
+    const tl = $('timeline'); tl.scrollTop = tl.scrollHeight;
+    $('timelineSub').textContent = `${S.events.length} events`;
+  }
+
+  // ---------- timeline ----------
+  const toolEls = {};
+  function addEv(cls, icon, html) { const div = document.createElement('div'); div.className = 'ev ' + cls; div.innerHTML = `<div class="ic">${icon}</div><div class="tx">${html}</div>`; $('timeline').appendChild(div); return div; }
+  function renderEvent(ev) {
+    const d = ev.data;
+    switch (ev.kind) {
+      case 'thought': addEv('thought', '💬', esc(d.text)); break;
+      case 'tool_start': {
+        if (d.tool === 'IncidentReport') { addEv('sys', '📝', 'Composing the structured incident report…'); break; }
+        if (toolEls[d.id]) { const h = toolEls[d.id].querySelector('.head'); if (h && !h.querySelector('[data-spin]')) h.insertAdjacentHTML('beforeend', '<span class="spinner" data-spin></span>'); break; }
+        const args = Object.entries(d.input || {}).map(([k, v]) => `${esc(k)}=${esc(typeof v === 'string' ? v : JSON.stringify(v)).slice(0, 90)}`).join(', ');
+        const el = addEv('tool', '⚙', `<div class="head"><span class="name">${esc(d.tool)}</span><span class="args">${args}</span><span class="spinner" data-spin></span></div><div class="res" data-res></div>`);
+        toolEls[d.id] = el; break; }
+      case 'tool_end': {
+        const el = toolEls[d.id]; if (!el) break;
+        const sp = el.querySelector('[data-spin]'); if (sp) sp.remove();
+        const res = el.querySelector('[data-res]');
+        if (d.cancelled) { res.className = 'res cancel'; res.textContent = '⛔ ' + d.cancelled; }
+        else if (d.status !== 'success') { res.className = 'res err'; res.textContent = '✖ ' + (d.result_preview || 'error'); }
+        else if (!res.innerHTML) { res.className = 'res ok'; res.innerHTML = `<details><summary>result · ${d.duration_s ?? '?'}s</summary><pre>${esc(d.result_preview)}</pre></details>`; }
+        break; }
+      case 'experiment': {
+        const el = lastToolEl('run_experiment'); const cls = verdictFor(d.value);
+        const html = d.status === 'ok'
+          ? `<span class="metric ${cls}">${esc(d.tracked_metric || record.metric)} = ${fmt(d.value)}</span> <span class="hint">${esc(short(d.sha))} · ${esc(d.config)} · ${d.duration_s}s${d.cached ? ' · cached' : ''}${cls ? ' · ' + cls : ''}</span>`
+          : `<span class="metric bad">experiment failed</span> <pre>${esc(d.stderr_tail)}</pre>`;
+        if (el) { const res = el.querySelector('[data-res]'); res.className = 'res ok'; res.innerHTML = html; } else addEv('sys', '🧪', html);
+        break; }
+      case 'edit': { const el = lastToolEl('edit_file'); const html = `<div class="diff">${diffHtml(d.diff)}</div>`; if (el) { el.querySelector('[data-res]').innerHTML = html; } else addEv('sys', '✎', html); break; }
+      case 'write': { const el = lastToolEl('write_file'); const html = `<span class="hint">${d.created ? 'created' : 'updated'} <code>${esc(d.path)}</code> (${d.lines} lines)</span>`; if (el) el.querySelector('[data-res]').innerHTML = html; break; }
+      case 'tests': { const el = lastToolEl('run_tests'); const html = `<span class="metric ${d.passed ? 'good' : 'bad'}">${d.passed ? '✔ tests passed' : '✖ tests failed'}</span> <details><summary>output</summary><pre>${esc(d.output_tail)}</pre></details>`; if (el) el.querySelector('[data-res]').innerHTML = html; break; }
+      case 'fix_started': addEv('sys', '🌿', `Fix branch <code>${esc(d.branch)}</code> created from <code>${esc(d.base)}</code>`); break;
+      case 'commit': addEv('sys', '🔍', `Inspecting <code>${esc(d.short)}</code> — ${esc(d.subject)}<details><summary>files</summary><pre>${esc(d.stat)}</pre></details>`); break;
+      case 'candidates': addEv('sys', '🗂', `${d.commits.length} candidate commits between <code>${esc(short(d.good_ref))}</code> and <code>${esc(short(d.bad_ref))}</code>`); break;
+      case 'interrupt': document.querySelectorAll('[data-spin]').forEach(x => x.remove()); addEv('decision', '✋', `Waiting for a human: ${esc((d.interrupts[0] && d.interrupts[0].reason && (d.interrupts[0].reason.summary || d.interrupts[0].reason.question)) || 'approval required')}`); break;
+      case 'decision': addEv('decision', d.decision === 'approve' ? '✅' : '🚫', `${d.decision === 'approve' ? 'Approved' : 'Rejected'} <code>${esc(d.tool)}</code>${d.comment ? ' — ' + esc(d.comment) : ''}`); break;
+      case 'auto_approved': addEv('decision', '✅', `Auto-approved <code>${esc(d.tool)}</code> (CULPRIT_AUTO_APPROVE)`); break;
+      case 'pull_request': { const el = lastToolEl('open_pull_request'); const html = d.url ? `<span class="metric good">✔ pull request (${esc(d.mode)})</span> <a href="${d.mode === 'local' ? `/api/runs/${current}/pull_request.md` : esc(d.url)}" target="_blank">${esc(d.mode === 'local' ? 'pull_request.md' : d.url)}</a>` : `<span class="metric bad">PR failed: ${esc(d.error)}</span>`; if (el) el.querySelector('[data-res]').innerHTML = html; else addEv('sys', '🔀', html); break; }
+      case 'notification': { const el = lastToolEl('notify'); const html = `<span class="metric ${d.delivered ? 'good' : 'bad'}">${d.delivered ? '✔' : '✖'} ${esc(d.channel)} via ${esc(d.mode)}</span><details><summary>message</summary><pre>${esc(d.message)}</pre></details>`; if (el) el.querySelector('[data-res]').innerHTML = html; break; }
+      case 'budget_exhausted': addEv('err', '⚠', `Experiment budget exhausted (${d.spent}/${d.max})`); break;
+      case 'question': addEv('decision', '❓', esc(d.question)); break;
+      case 'answer': addEv('decision', '💡', `Answer: ${esc(d.answer)}`); break;
+      case 'model_error': addEv('err', '⚠', `Model error: ${esc(d.error)}${d.retry ? ' (retrying)' : ''}`); break;
+      case 'error': addEv('err', '✖', esc(d.error)); break;
+      case 'status': addEv('sys', '·', `status → ${esc(d.status)}`); break;
+      case 'report': addEv('sys', '📋', 'Incident report ready.'); break;
+    }
+  }
+  function lastToolEl(name) { const els = Object.values(toolEls).filter(e => e.querySelector('.name') && e.querySelector('.name').textContent === name); return els[els.length - 1]; }
+  function diffHtml(diff) { return String(diff || '').split('\n').map(l => { const c = l.startsWith('+') && !l.startsWith('+++') ? 'add' : l.startsWith('-') && !l.startsWith('---') ? 'del' : l.startsWith('@@') ? 'hunk' : ''; return `<div class="${c}">${esc(l) || '&nbsp;'}</div>`; }).join(''); }
+
+  // ---------- verdicts / bisection ----------
+  function calibration() {
+    if (!S.regression) return null;
+    const isFix = (e) => (S.fixBranch && e.ref === S.fixBranch) || String(e.sha || '').includes('+wip');
+    const g = S.experiments.filter(e => e.status === 'ok' && !isFix(e) && (e.sha || '').startsWith(S.regression.last_good_commit.slice(0, 12))).slice(-1)[0];
+    const b = S.experiments.filter(e => e.status === 'ok' && !isFix(e) && (e.sha || '').startsWith(S.regression.first_bad_commit.slice(0, 12))).slice(-1)[0];
+    return g && b ? { good: g.value, bad: b.value } : null;
+  }
+  function verdictFor(v) { const c = calibration(); if (c == null || typeof v !== 'number') return ''; return Math.abs(v - c.bad) < Math.abs(v - c.good) ? 'bad' : 'good'; }
+  function stateOf(sha) {
+    if (S.testing[sha.slice(0, 12)] || Object.keys(S.testing).some(k => sha.startsWith(k))) return 'testing';
+    const ex = S.experiments.filter(e => e.status === 'ok' && !String(e.sha || '').includes('+wip') && !(S.fixBranch && e.ref === S.fixBranch) && sha.startsWith((e.sha || '').slice(0, 12))).slice(-1)[0];
+    if (!ex) return 'untested';
+    return verdictFor(ex.value) || 'measured';
+  }
+  function boardCulprit() {
+    if (!S.candidates) return null;
+    const states = S.candidates.map(c => stateOf(c.sha));
+    for (let i = 0; i < states.length; i++) {
+      if (states[i] === 'bad' && (i === 0 || states[i - 1] === 'good')) return short(S.candidates[i].sha);
+    }
+    return null;
+  }
+  function renderBoard() {
+    if (!S.candidates) return;
+    const culprit = S.report ? S.report.culprit_commit : boardCulprit();
+    const rows = S.candidates.map(c => {
+      let st = stateOf(c.sha); if (culprit && c.sha.startsWith(culprit)) st = 'culprit';
+      return `<div class="commit"><span class="sha">${esc(short(c.sha))}</span><span class="subj" title="${esc(c.subject)}">${esc(c.subject)} <small>· ${esc(c.author)}</small></span><span class="state ${st}">${st}</span></div>`;
+    });
+    const cal = calibration();
+    $('board').innerHTML = `<div class="boundary">▲ last good <span class="sha">${esc(short(S.boundaries.good))}</span>${cal ? ` · fast-config ${esc(record.metric)} ${fmt(cal.good)}` : ''}</div>${rows.join('')}<div class="boundary">▼ first bad <span class="sha">${esc(short(S.boundaries.bad))}</span>${cal ? ` · fast-config ${esc(record.metric)} ${fmt(cal.bad)}` : ''}</div>${S.fixBranch ? `<div class="boundary">🌿 fix branch <span class="sha">${esc(S.fixBranch)}</span> <span class="state ${fixState()}">${fixState()}</span></div>` : ''}`;
+    const tested = S.candidates.filter(c => ['good', 'bad', 'culprit'].includes(stateOf(c.sha)) || (culprit && c.sha.startsWith(culprit))).length;
+    $('boardSub').textContent = `${tested}/${S.candidates.length} tested`;
+  }
+  function fixState() { const e = S.experiments.filter(x => S.fixBranch && x.ref === S.fixBranch && x.status === 'ok').slice(-1)[0]; if (!e) return 'untested'; return verdictFor(e.value) === 'good' ? 'fixed' : 'bad'; }
+  function renderExperiments() {
+    if (!S.experiments.length) return;
+    const rows = S.experiments.map((e, i) => `<tr><td>${i + 1}</td><td class="num">${esc(S.fixBranch && e.ref === S.fixBranch ? S.fixBranch : short(e.sha))}</td><td>${esc(e.config)}</td><td class="num">${e.status === 'ok' ? fmt(e.value) : 'failed'}</td><td><span class="state ${S.fixBranch && e.ref === S.fixBranch ? fixState() : (verdictFor(e.value) || '')}">${S.fixBranch && e.ref === S.fixBranch ? fixState() : (verdictFor(e.value) || '·')}</span></td><td class="num">${e.cached ? 'cache' : e.duration_s + 's'}</td><td class="hint">${esc(e.note || '')}</td></tr>`);
+    $('experiments').innerHTML = `<table class="exp"><tr><th>#</th><th>ref</th><th>config</th><th>${esc(record.metric)}</th><th>verdict</th><th>time</th><th>note</th></tr>${rows.join('')}</table>`;
+    $('expSub').textContent = `${S.experiments.filter(e => !e.cached).length} run`;
+  }
+
+  // ---------- chart ----------
+  function renderChart() {
+    const svg = $('chart'); if (!S.metrics || !S.metrics.length) return;
+    const metric = record.metric; const runs = S.metrics.filter(r => r.status === 'success' && r.metrics[metric] != null);
+    const fix = S.experiments.filter(e => S.fixBranch && e.ref === S.fixBranch && e.status === 'ok').slice(-1)[0];
+    const W = 520, H = 170, L = 44, R = 16, T = 16, B = 26; const n = runs.length;
+    const vals = runs.map(r => r.metrics[metric]); let lo = Math.min(...vals), hi = Math.max(...vals); const pad = Math.max((hi - lo) * 0.25, 0.02); lo -= pad; hi += pad;
+    const x = (i) => L + (n > 1 ? i * (W - L - R) / (n - 1) : (W - L - R) / 2), y = (v) => T + (hi - v) * (H - T - B) / (hi - lo);
+    const badFrom = S.regression ? runs.findIndex(r => S.regression.first_bad_commit.startsWith(r.commit.slice(0, 12)) && r.run_id === S.regression.first_bad_run) : -1;
+    const ticks = [lo + pad, hi - pad].map(v => `<g class="axis"><line class="base" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"></line><text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end">${fmt(v)}</text></g>`).join('');
+    const path = runs.map((r, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(r.metrics[metric]).toFixed(1)}`).join(' ');
+    const pts = runs.map((r, i) => { const bad = badFrom >= 0 && i >= badFrom; return `<circle class="pt ${bad ? 'bad' : 'good'}" cx="${x(i)}" cy="${y(r.metrics[metric])}" r="5"></circle><circle class="hit" cx="${x(i)}" cy="${y(r.metrics[metric])}" r="14" data-tip="${esc(r.run_id)} · ${esc(short(r.commit))} · ${metric} ${fmt(r.metrics[metric])}"></circle>`; }).join('');
+    const labels = runs.map((r, i) => (i === 0 || i === n - 1 || i === badFrom) ? `<text class="lbl" x="${x(i)}" y="${y(r.metrics[metric]) - 9}" text-anchor="${i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle'}">${fmt(r.metrics[metric])}</text>` : '').join('');
+    const xlabels = runs.map((r, i) => (i === 0 || i === n - 1) ? `<text class="axis" x="${x(i)}" y="${H - 8}" text-anchor="${i ? 'end' : 'start'}" style="fill:var(--muted);font-size:10.5px;font-family:var(--mono)">${esc(r.timestamp.slice(5, 10))}</text>` : '').join('');
+    svg.innerHTML = `<g class="grid">${ticks}</g><path class="line" d="${path}"></path>${pts}${labels}${xlabels}`;
+    $('chartSub').textContent = `${metric} · ${n} nightly runs`;
+    $('chartHint').textContent = S.regression ? `regression detected: ${fmt(S.regression.baseline_value)} → ${fmt(S.regression.regressed_value)} (${S.regression.last_good_run} → ${S.regression.first_bad_run})` + (fix ? ` · fix branch measures ${fmt(fix.value)} with the fast config` : '') : '';
+    const tip = $('tip');
+    svg.querySelectorAll('.hit').forEach(h => { h.onmousemove = (e) => { tip.textContent = h.dataset.tip; tip.style.display = 'block'; tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY + 12) + 'px'; }; h.onmouseleave = () => tip.style.display = 'none'; });
+  }
+
+  // ---------- approval ----------
+  function renderApproval() {
+    const box = $('approval');
+    if (!record || record.status !== 'awaiting_human' || !S.interrupts.length) { box.hidden = true; return; }
+    const intr = S.interrupts[0]; const reason = intr.reason || {};
+    box.className = 'approval';
+    if (reason.question) {
+      box.innerHTML = `<h3>❓ Culprit needs a decision</h3><div>${esc(reason.question)}</div><div class="actions" style="margin-top:10px">${(reason.options || []).map(o => `<button class="btn" data-answer="${esc(o)}">${esc(o)}</button>`).join('')}<input type="text" id="answerInput" placeholder="or type an answer"><button class="btn primary" id="answerBtn">Send</button></div>`;
+      box.querySelectorAll('[data-answer]').forEach(b => b.onclick = () => respond({ answer: b.dataset.answer }));
+      $('answerBtn').onclick = () => respond({ answer: $('answerInput').value });
+    } else {
+      const input = reason.input || {};
+      box.innerHTML = `<h3>✋ Approval required <span class="badge">${esc(reason.tool || intr.name)}</span></h3>
+        <div><b>${esc(reason.summary || '')}</b></div>
+        ${input.body ? `<div class="body md">${md(input.body)}</div>` : `<div class="body"><pre>${esc(JSON.stringify(input, null, 2))}</pre></div>`}
+        <div class="actions"><button class="btn good" id="approveBtn">✔ Approve &amp; open PR</button><button class="btn bad" id="rejectBtn">✘ Reject</button><input type="text" id="commentInput" placeholder="optional comment for the agent"></div>`;
+      $('approveBtn').onclick = () => respond({ decision: 'approve', comment: $('commentInput').value });
+      $('rejectBtn').onclick = () => respond({ decision: 'reject', comment: $('commentInput').value });
+    }
+    box.hidden = false;
+  }
+  async function respond(payload) {
+    try {
+      $('approval').querySelectorAll('button').forEach(b => b.disabled = true);
+      record = await api(`/api/runs/${current}/respond`, { method: 'POST', body: JSON.stringify(payload) });
+      S.interrupts = []; renderApproval(); renderHead(); subscribe();
+    } catch (e) { toast('could not respond: ' + e.message); $('approval').querySelectorAll('button').forEach(b => b.disabled = false); }
+  }
+
+  // ---------- report ----------
+  function renderReport() {
+    const card = $('reportCard'); const r = S.report; if (!r) { card.hidden = true; return; }
+    const ev = (r.evidence || []).map(e => `<tr><td><code>${esc(e.ref)}</code></td><td>${fmt(e.metric_value)}</td><td><span class="state ${esc(e.verdict)}">${esc(e.verdict)}</span></td></tr>`).join('');
+    card.className = 'card report'; card.hidden = false;
+    card.innerHTML = `<div class="card-h">📋 Incident report — ${esc(r.title)} <span class="sub">confidence: ${esc(r.confidence)}</span></div>
+      <div class="card-b md">
+        <div class="kpis" style="margin-bottom:10px"><div class="kpi"><div class="k">culprit</div><div class="v"><code>${esc(r.culprit_commit)}</code></div><div class="hint">${esc(r.culprit_subject)}</div></div>
+          <div class="kpi"><div class="k">${esc(r.metric)}</div><div class="v"><span class="bad">${fmt(r.baseline_value)} → ${fmt(r.regressed_value)}</span>${r.recovered_value != null ? ` <span class="good">→ ${fmt(r.recovered_value)}</span>` : ''}</div></div>
+          <div class="kpi"><div class="k">pull request</div><div class="v" style="font-size:13px">${r.pull_request ? `<a href="${S.pr && S.pr.mode === 'local' ? `/api/runs/${current}/pull_request.md` : esc(r.pull_request)}" target="_blank">open ↗</a>` : 'not opened'}</div></div></div>
+        <h2>Root cause</h2><p>${esc(r.root_cause)}</p>
+        <h2>Evidence</h2><table><tr><th>ref</th><th>${esc(r.metric)}</th><th>verdict</th></tr>${ev}</table>
+        <h2>Fix</h2><p>${esc(r.fix_summary)}</p><p class="hint">files: ${(r.files_changed || []).map(f => `<code>${esc(f)}</code>`).join(' ')}${r.guard_test ? ` · guard test: <code>${esc(r.guard_test)}</code>` : ''}</p>
+        <h2>Follow-ups</h2><ul>${(r.follow_ups || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+      </div>`;
+  }
+
+  // ---------- boot ----------
+  (async () => {
+    try { await loadConfig(); await loadRuns(); } catch (e) { toast('API error: ' + e.message); }
+    const params = new URLSearchParams(location.search);
+    if (params.get('run')) openRun(params.get('run'));
+    else { const runs = await api('/api/runs').catch(() => []); if (runs.length) openRun(runs[0].run_id); }
+  })();
+})();
+</script>
+</body>
+</html>

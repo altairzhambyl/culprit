@@ -1,0 +1,37 @@
+flowchart TB
+    subgraph FD["Front doors"]
+        CLI["CLI<br/>culprit investigate · resume"]
+        WEB["Web dashboard<br/>FastAPI + SSE timeline, approval, report"]
+        AC["Amazon Bedrock AgentCore Runtime<br/>POST /invocations · GET /ping"]
+    end
+
+    RM["RunManager<br/>runs/{id}/ run.json · events.jsonl · trace.jsonl · session/ · report.md"]
+    HUMAN(("Engineer<br/>approve / reject<br/>(any process, any time)"))
+
+    subgraph AG["Strands Agent — Culprit investigator"]
+        MODEL["Model provider<br/>Bedrock Claude (default) · Anthropic · OpenAI · scripted"]
+        HOOKS["Hooks<br/>ApprovalHook → interrupt · BudgetHook · TraceHook"]
+        TOOLS["12 @tools<br/>get_metric_history · list_commits · show_commit · read_file<br/>run_experiment · start_fix · edit_file · write_file · run_tests<br/>open_pull_request · notify · ask_human"]
+        OUT["FileSessionManager (resumable) · IncidentReport structured output"]
+    end
+
+    subgraph EXT["Adapters · target repository"]
+        MS["Metric store<br/>nightly JSON (MLflow/W&B-shaped)"]
+        GIT["git worktrees per commit<br/>experiment command · fix branch"]
+        GH["GitHub PR (REST)<br/>local Markdown fallback"]
+        SL["Slack webhook<br/>local fallback"]
+    end
+
+    CLI --> RM
+    WEB --> RM
+    AC --> RM
+    RM ==> MODEL
+    MODEL <--> TOOLS
+    HOOKS -.->|before / after every tool & model call| TOOLS
+    TOOLS -.-> OUT
+    TOOLS --> MS
+    TOOLS --> GIT
+    TOOLS --> GH
+    TOOLS --> SL
+    HOOKS -->|"interrupt: open the PR?"| HUMAN
+    HUMAN -->|decision| RM

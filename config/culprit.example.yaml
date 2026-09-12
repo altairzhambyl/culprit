@@ -1,0 +1,10 @@
+# Drop this file at the root of any repository as `.culprit.yaml` to make it investigable.
+metric: f1                       # key in the metrics JSON your experiment command writes
+higher_is_better: true
+regression_threshold: 0.03       # absolute change that counts as a regression
+experiment_command: "python -m churn.train --config {config} --out {out}"   # {config} and {out} are substituted
+test_command: "python -m pytest -q"
+metrics_history: "nightly/metrics_history.json"   # metric store (JSON) — relative to the repo or absolute
+default_config: smoke            # fast config used for bisection experiments
+experiment_timeout_s: 300
+main_branch: main

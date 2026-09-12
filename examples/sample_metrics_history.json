@@ -1,0 +1,83 @@
+{
+  "project": "churn-model",
+  "runs": [
+    {
+      "run_id": "nightly-2026-09-07",
+      "timestamp": "2026-09-07T02:15:00+00:00",
+      "commit": "8afc8a82e8b2939e371226f1c32f09cf72faeca9",
+      "branch": "main",
+      "config": "full",
+      "metrics": {
+        "f1": 0.8267,
+        "auc": 0.9408,
+        "accuracy": 0.865
+      },
+      "status": "success"
+    },
+    {
+      "run_id": "nightly-2026-09-08",
+      "timestamp": "2026-09-08T02:15:00+00:00",
+      "commit": "8afc8a82e8b2939e371226f1c32f09cf72faeca9",
+      "branch": "main",
+      "config": "full",
+      "metrics": {
+        "f1": 0.8267,
+        "auc": 0.9408,
+        "accuracy": 0.865
+      },
+      "status": "success"
+    },
+    {
+      "run_id": "nightly-2026-09-09",
+      "timestamp": "2026-09-09T02:15:00+00:00",
+      "commit": "e84a165ebb911031c2d80bd6c8e360524cea0ac8",
+      "branch": "main",
+      "config": "full",
+      "metrics": {
+        "f1": 0.8301,
+        "auc": 0.9408,
+        "accuracy": 0.867
+      },
+      "status": "success"
+    },
+    {
+      "run_id": "nightly-2026-09-10",
+      "timestamp": "2026-09-10T02:15:00+00:00",
+      "commit": "e84a165ebb911031c2d80bd6c8e360524cea0ac8",
+      "branch": "main",
+      "config": "full",
+      "metrics": {
+        "f1": 0.8301,
+        "auc": 0.9408,
+        "accuracy": 0.867
+      },
+      "status": "success"
+    },
+    {
+      "run_id": "nightly-2026-09-11",
+      "timestamp": "2026-09-11T02:15:00+00:00",
+      "commit": "e84a165ebb911031c2d80bd6c8e360524cea0ac8",
+      "branch": "main",
+      "config": "full",
+      "metrics": {
+        "f1": 0.8301,
+        "auc": 0.9408,
+        "accuracy": 0.867
+      },
+      "status": "success"
+    },
+    {
+      "run_id": "nightly-2026-09-12",
+      "timestamp": "2026-09-12T02:15:00+00:00",
+      "commit": "435ecb6139f27b61c59733d7ba31ec9074e0b477",
+      "branch": "main",
+      "config": "full",
+      "metrics": {
+        "f1": 0.6624,
+        "auc": 0.8226,
+        "accuracy": 0.739
+      },
+      "status": "success"
+    }
+  ]
+}
