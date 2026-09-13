@@ -14,7 +14,7 @@ The intended audience is small ML teams and engineers who need reproducible evid
 ## Implementation
 One Strands Agent uses twelve tools for Git inspection, experiments, editing, testing, approval and delivery. Strands hooks enforce experiment budgets, limit repeated tool calls, record traces and interrupt before consequential actions. FileSessionManager preserves the session across a pause and a later resume. FastAPI and server-sent events power the dashboard; a Typer CLI provides the same workflow. Amazon Bedrock is the default real-model provider, with Anthropic and OpenAI alternatives.
 
-## What the submitted demonstration proves
+## What the demonstration proves
 The video is an actual recording of the local application using the explicitly labelled **scripted** integration-test provider. This provider knows the churn repair; the Git worktrees, ML training, measurements, tests, approval and report are real. These results are **not evidence of real-model generalization**.
 
 In the recorded investigation, nightly F1 dropped from 0.8301 to 0.6624. Five experiments identified commit `eb367c9`. A separate evaluator subsequently checked the same run and independently measured fast-config F1 recovering from 0.7027 to 0.8111, matching its fast-config good baseline of 0.8111. It reran the project tests successfully and confirmed the new regression-test file. Fast-config values and nightly values are deliberately reported separately.
@@ -22,7 +22,7 @@ In the recorded investigation, nightly F1 dropped from 0.8301 to 0.6624. Five ex
 The approval was explicit in the dashboard. The recorded PR and notification use local adapters. A live GitHub PR for this generated ML repository is not claimed. The source repository is public at https://github.com/danialmukash-cell/culprit.
 
 ## Validation and limitations
-- Release verification: **67 passed, 1 warning in 235.88 seconds**, Python 3.11.2 on Windows; Ruff passed.
+- Release verification: **67 passed, 1 warning in 235.88 seconds**, Python 3.11.2 on Windows; Ruff passed. GitHub CI also passed on Python 3.10, 3.11 and 3.12.
 - The fraud scenario is separate from the scripted policy's repair logic. A real provider must still run its generalization evaluation.
 - Real Bedrock / Anthropic / OpenAI investigation: not run; no authorized provider credentials were available.
 - AgentCore entrypoint is included; cloud deployment and cloud invocation are not verified.
@@ -38,7 +38,7 @@ Clone the public repository and follow the Linux/macOS or Windows commands in th
 The source, generated data/scenarios and offline demonstration remain freely available to judges. A hosted live application is not currently provided.
 
 ## Architecture
-Upload `architecture-final.png`. It shows the nightly trigger, Strands agent, experiment loop, verification and human approval boundary. It accurately labels the AgentCore status.
+[View the architecture diagram](https://github.com/danialmukash-cell/culprit/blob/main/docs/architecture-final.png). It shows the nightly trigger, Strands agent, experiment loop, verification and human approval boundary. It accurately labels the AgentCore status.
 
 ## Built with
 Python, Strands Agents SDK, Amazon Bedrock, FastAPI, Git, scikit-learn, pandas, NumPy, Pydantic, Typer.
@@ -48,7 +48,7 @@ Python, Strands Agents SDK, Amazon Bedrock, FastAPI, Git, scikit-learn, pandas, 
 - Track: Professional Agents
 - Public repository: https://github.com/danialmukash-cell/culprit
 - Architecture: architecture-final.png
-- Video: culprit-demo.mp4; upload publicly to YouTube or Vimeo and enter the resulting URL.
+- Video: https://www.youtube.com/watch?v=Qep4Oz1iLXo
 - Submitter type: **user must provide** Individual / Team of Individuals / Organization.
 - Country of residence: **user must provide**; do not infer from language or timezone.
 - AWS Builder ID: **user must provide**.
@@ -63,4 +63,4 @@ Official requirements and rules were fetched from the Devpost connector on Septe
 - Deadline: September 15, 2026 at 00:00 UTC (05:00 Asia/Qyzylorda).
 
 ## Status
-Prepared materials; **not submitted to Devpost**. Real-model validation and a public YouTube/Vimeo video URL are still missing, along with the user's required form data and final attestations.
+Project page and YouTube video are published; **not submitted to the hackathon**. Required personal form data and final attestations remain outstanding. The architecture file has been uploaded in the contest form; saving the complete form remains pending. Real-model validation is still pending.
