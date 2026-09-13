@@ -989,20 +989,26 @@
   const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   async function respond(payload) {
+    const id = current, gen = openGen;
+    const isCurrent = () => current === id && openGen === gen;
     const slot = $('askSlot');
     try {
       slot.querySelectorAll('button, input').forEach(b => b.disabled = true);
-      record = await api(`/api/runs/${current}/respond`, { method: 'POST', body: JSON.stringify(payload) });
+      const response = await api(`/api/runs/${id}/respond`, { method: 'POST', body: JSON.stringify(payload) });
+      if (!isCurrent()) return;
+      record = response;
       S.interrupts = []; S.decided = true; slot.dataset.shown = '';
       renderAsk(); paint(); subscribe();
       if (askReturnFocus && document.contains(askReturnFocus)) askReturnFocus.focus({ preventScroll: true });
       askReturnFocus = null;
     } catch (e) {
+      if (!isCurrent()) return;
       toast('Could not send your answer: ' + e.message);
       slot.querySelectorAll('button, input').forEach(b => b.disabled = false);
       // Most likely someone approved this run from another process while the card sat here.
       try {
-        const fresh = await api('/api/runs/' + current);
+        const fresh = await api('/api/runs/' + id);
+        if (!isCurrent()) return;
         if (fresh.status !== 'awaiting_human') { S.interrupts = []; slot.dataset.shown = ''; openRun(current); }
       } catch (e2) { /* offline; the toast is all we can offer */ }
     }
@@ -1040,22 +1046,32 @@
   function subscribe() {
     if (es) { es.close(); es = null; }
     clearTimeout(pollTimer);
+    const id = current, gen = openGen;
+    const isCurrent = () => current === id && openGen === gen;
     const open = (from) => {
-      es = new EventSource(`/api/runs/${current}/stream?after=${from}`);
-      es.onmessage = (m) => { handle(JSON.parse(m.data)); paint(); };
-      es.addEventListener('done', async () => {
-        es.close(); es = null;
-        try { record = await api('/api/runs/' + current); } catch (e) { /* keep last known record */ }
+      if (!isCurrent()) return;
+      const stream = new EventSource(`/api/runs/${id}/stream?after=${from}`);
+      es = stream;
+      stream.onmessage = (m) => { if (isCurrent() && es === stream) { handle(JSON.parse(m.data)); paint(); } };
+      stream.addEventListener('done', async () => {
+        if (!isCurrent() || es !== stream) return;
+        stream.close(); es = null;
+        try {
+          const fresh = await api('/api/runs/' + id);
+          if (!isCurrent()) return;
+          record = fresh;
+        } catch (e) { /* keep last known record */ }
+        if (!isCurrent()) return;
         paint(); loadRuns();
         if (record && record.status === 'completed') { say('Investigation complete.'); $('logCard').open = false; }
         else if (record && record.status === 'awaiting_human') pollWhilePaused();
       });
       // The browser reconnects on error with the ORIGINAL url, which would replay from a stale
       // sequence number. Take the reconnect over ourselves so we always resume from lastSeq.
-      es.onerror = () => {
-        if (!es) return;
-        es.close(); es = null;
-        setTimeout(() => { if (current && !es) open(lastSeq); }, 1500);
+      stream.onerror = () => {
+        if (!isCurrent() || es !== stream) return;
+        stream.close(); es = null;
+        setTimeout(() => { if (isCurrent() && !es) open(lastSeq); }, 1500);
       };
     };
     open(lastSeq);
@@ -1074,6 +1090,7 @@
   let openGen = 0;
   async function openRun(id) {
     const gen = ++openGen;                 // a later openRun() invalidates this one mid-await
+    clearTimeout(pollTimer);
     if (es) { es.close(); es = null; }
     current = id; S = blank(); lastSeq = 0;
     for (const k of Object.keys(toolEls)) delete toolEls[k];
@@ -1107,17 +1124,22 @@
   let pollTimer = null;
   function pollWhilePaused() {
     clearTimeout(pollTimer);
+    const id = current, gen = openGen;
+    const isCurrent = () => current === id && openGen === gen;
     const tick = async () => {
-      if (!current || es) return;
+      if (!isCurrent() || es) return;
       let fresh;
-      try { fresh = await api('/api/runs/' + current); } catch (e) { pollTimer = setTimeout(tick, 8000); return; }
-      if (!current || es) return;
+      try { fresh = await api('/api/runs/' + id); } catch (e) { if (isCurrent()) pollTimer = setTimeout(tick, 8000); return; }
+      if (!isCurrent() || es) return;
       if (fresh.status !== 'awaiting_human') {
         record = fresh; S.interrupts = []; S.decided = true; $('askSlot').dataset.shown = '';
         // Replay whatever happened while we were not listening, then follow live if it is still going.
         try {
-          for (const ev of await api(`/api/runs/${current}/events?after=${lastSeq}`)) handle(ev);
+          const events = await api(`/api/runs/${id}/events?after=${lastSeq}`);
+          if (!isCurrent()) return;
+          for (const ev of events) handle(ev);
         } catch (e) { /* the next paint still shows the new status */ }
+        if (!isCurrent()) return;
         paint(); loadRuns();
         if (['running', 'reporting'].includes(record.status) || record.active) subscribe();
         return;
