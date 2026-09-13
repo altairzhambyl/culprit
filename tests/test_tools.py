@@ -1,5 +1,7 @@
 """Direct tests of the Strands tools (called as plain functions, outside the agent loop)."""
 
+import json
+
 from pathlib import Path
 
 import pytest
@@ -95,6 +97,14 @@ def test_run_experiment_caches_and_detects_regression(tools: InvestigationTools,
     again = tools.run_experiment(demo_repo["commits"][1]["sha"])
     assert again["cached"] is True
     assert len(tools.ctx.record.experiments) == 2  # cached results are not re-recorded
+    # A cache hit must be the same shape as a fresh run. The dashboard keys its good/bad calibration
+    # off `value`; a cached event without it used to shadow the real measurement and paint every
+    # commit "healthy".
+    assert again["value"] == good["value"]
+    assert again["tracked_metric"] == tools.ctx.project.metric
+    emitted = [json.loads(line) for line in (tools.ctx.run_dir / "events.jsonl").read_text().splitlines()]
+    cached_events = [e for e in emitted if e["kind"] == "experiment" and e["data"].get("cached")]
+    assert cached_events and cached_events[-1]["data"]["value"] == good["value"]
     assert tools.run_experiment("does-not-exist")["error"]
 
 

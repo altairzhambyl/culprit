@@ -1,0 +1,68 @@
+# Culprit web dashboard (`culprit serve`) — native-platform image for self-hosting.
+#
+# This is NOT the Amazon Bedrock AgentCore image: that one is the top-level `Dockerfile`
+# (forced linux/arm64, port 8080, `python -m culprit.agentcore_app`). This image builds for
+# whatever platform you build it on and serves the FastAPI dashboard on port 8000.
+#
+#   docker build -f Dockerfile.dashboard -t culprit-dash .
+#   docker run --rm -p 8000:8000 -e CULPRIT_MODEL_PROVIDER=scripted culprit-dash
+#
+# See docs/self-hosting.md — in particular the SECURITY section before exposing this anywhere.
+
+# ---------------------------------------------------------------------------------------------
+# Build stage: resolve and install the package (and its deps) into a relocatable prefix.
+#
+# Deliberately NOT a virtualenv: to run a project's experiment command, Culprit puts a
+# `<run_dir>/bin/python` symlink to sys.executable on PATH. A symlink into a venv's bin/ defeats
+# CPython's venv detection (sys.prefix falls back to the base install), so the experiment
+# subprocess would not see pandas/scikit-learn. Installing into the base interpreter avoids it.
+# ---------------------------------------------------------------------------------------------
+FROM python:3.11-slim AS build
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /src
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN pip install --prefix=/install .
+
+# ---------------------------------------------------------------------------------------------
+# Runtime stage: slim base + git + the prebuilt site-packages. No compilers, no pip cache.
+# ---------------------------------------------------------------------------------------------
+FROM python:3.11-slim
+
+# git is a hard runtime dependency: every investigation shells out to git (worktrees for
+# experiments, a branch + commit for the fix) and the demo generator does `git init -b main`,
+# which needs git >= 2.28.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --create-home --uid 10001 --shell /bin/bash culprit \
+ && mkdir -p /data/runs \
+ && chown -R culprit:culprit /data
+
+COPY --from=build /install /usr/local
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CULPRIT_RUNS_DIR=/data/runs \
+    CULPRIT_HOST=0.0.0.0 \
+    CULPRIT_PORT=8000
+
+# /data is both the state directory and the working directory: Culprit resolves the runs dir and
+# the bundled demo repo paths ("demo/churn-model", "demo/fraud-risk") relative to the process CWD.
+# No VOLUME instruction on purpose: mount your own named volume or host dir at /data (see
+# docker-compose.yml) instead of accumulating anonymous volumes.
+WORKDIR /data
+USER culprit
+EXPOSE 8000
+
+# GET /api/health returns {"status": "ok", "model": ...}; urllib avoids shipping curl.
+# The check first refuses a loopback CULPRIT_HOST: with it, uvicorn binds 127.0.0.1 *inside* the
+# container, the published port answers nothing, and a health probe from inside would still pass —
+# an unreachable container reported as healthy. Fail loudly instead.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["python", "-c", "import os,urllib.request,sys; h=os.environ.get('CULPRIT_HOST','0.0.0.0'); sys.exit('CULPRIT_HOST='+h+': the server is bound inside the container only; it must be 0.0.0.0 (restrict exposure with the port publish address instead)') if h not in ('0.0.0.0','::','') else None; url='http://127.0.0.1:'+os.environ.get('CULPRIT_PORT','8000')+'/api/health'; sys.exit(0 if urllib.request.urlopen(url, timeout=4).status==200 else 1)"]
+
+CMD ["culprit", "serve"]

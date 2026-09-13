@@ -1,0 +1,64 @@
+@startuml architecture
+!include _style.puml
+skinparam linetype ortho
+skinparam nodesep 26
+skinparam ranksep 40
+title Culprit — component view
+
+package "Front doors" as FD {
+  rectangle "**CLI**\n<color:$muted>investigate · resume</color>" as CLI
+  rectangle "**Dashboard**\n<color:$muted>FastAPI · SSE timeline</color>" as WEB
+  rectangle "**Nightly automation**\n<color:$muted>record-nightly · watch</color>\n<color:$muted>one run per good→bad window</color>" as AUTO
+  rectangle "**AgentCore Runtime**\n<color:$muted>/invocations · /ping</color>\n<color:$muted>implemented, never executed</color>" as AC $warnFill
+}
+
+actor "Engineer\n<color:$muted>any process, any time</color>" as HUMAN $accentFill
+rectangle "**RunManager**\n<color:$muted>one thread per run · resumable</color>" as RM $accentFill
+database "**runs/<id>/**\n<color:$muted>run.json · events.jsonl · trace</color>\n<color:$muted>session/ · report.md (IncidentReport)</color>" as RUNDIR
+
+package "Strands Agent — one per run, built by build_agent()" as AG {
+  rectangle "**Model provider** — pluggable\n<color:$muted>bedrock · anthropic</color>\n<color:$muted>openai · scripted</color>" as MODEL $accentFill
+  rectangle "**4 hooks**\n<color:$muted>Trace observes every call;</color>\n<color:$muted>Budget · LoopGuard cancel;</color>\n<color:$muted>Approval interrupts</color>" as HOOKS $badFill
+  rectangle "**12 @tools**\n<color:$muted>metrics · git · experiment · fix</color>\n<color:$muted>tests · PR · notify · ask_human</color>" as TOOLS $accentFill
+  rectangle "**FileSessionManager**\n<color:$muted>messages on disk · resumable</color>" as SESS
+}
+
+package "Target repo & adapters" as EXT {
+  rectangle "**Target repository**\n<color:$muted>worktree per commit</color>" as REPO $greyFill
+  database "**Metric store**\n<color:$muted>nightly JSON</color>" as MS
+  rectangle "**GitHub PR**\n<color:$muted>REST · local .md</color>" as GH $greyFill
+  rectangle "**Slack**\n<color:$muted>webhook · local jsonl</color>" as SL $greyFill
+}
+
+CLI  -down-> RM
+WEB  -down-> RM
+AUTO -down-> RM : regression detected
+AC   -down-> RM
+RM   -right-> RUNDIR : writes
+RUNDIR -[$accent]up-> WEB : replay + live bus →\nSSE stream (28 event kinds)
+RM   -[$accent,thickness=2]down-> AG
+MODEL -[$accent,thickness=2]down-> TOOLS : tool calls
+HOOKS -[$bad,dashed]down-> TOOLS : observe · cancel · interrupt
+SESS -up-> RUNDIR : session/
+TOOLS -down-> MS : read history
+TOOLS -down-> REPO : experiments in worktrees
+TOOLS -[$good,thickness=2]down-> GH : open PR — only after approval
+TOOLS -down-> SL : notify
+HOOKS -[$bad,thickness=2]up-> RM : interrupt\nculprit-approval:open_pull_request
+TOOLS -[$bad,dashed]up-> RM : interrupt\nculprit-question (ask_human)
+RM -[$bad,thickness=2]right-> HUMAN : "open the PR?"
+HUMAN -[$good,thickness=2]-> RM : approve / reject
+
+legend right
+|= |= fill |
+|<back:$accentFill>    </back>| agent runtime |
+|<back:$badFill>    </back>| gate — can stop the agent |
+|<back:$warnFill>    </back>| implemented, not executed here |
+|<back:$greyFill>    </back>| external system / adapter |
+|= |= line |
+| <color:$accent>———</color> | agent control flow |
+| <color:$bad>———</color> | interrupt · human gate |
+| <color:$good>———</color> | approved path (no PR without a yes) |
+| <color:$muted>———</color> | data & I/O |
+endlegend
+@enduml

@@ -93,7 +93,7 @@ prefer to start from the dashboard, click Investigate instead — the rest of th
 
 ## 4:00 — Architecture (25 s)
 
-*Screen: `docs/architecture.png`.*
+*Screen: `docs/diagrams/architecture.png` (or `investigation-sequence.png` if you want to walk the interrupt).*
 
 > "Three front doors — CLI, dashboard, and an Amazon Bedrock AgentCore Runtime entrypoint — share one
 > RunManager and one agent. Adapters for the metric store, GitHub and Slack have local fallbacks, so

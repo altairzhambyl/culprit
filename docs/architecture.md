@@ -2,9 +2,12 @@
 
 Culprit is a single, purpose-built Strands agent wrapped in a small product: a run manager that
 persists everything, a tool set that does real work in a git repository, hooks that add approval,
-budget and observability, and three front doors (CLI, web dashboard, AgentCore Runtime).
+budget and observability, and three front doors (CLI, web dashboard, AgentCore Runtime) plus the
+nightly automation (`record-nightly` / `watch`), which starts a run without a human.
 
-![Culprit architecture](architecture.png)
+![Culprit architecture](diagrams/architecture.svg)
+
+Source and the other two views (investigation sequence, deployment): [`diagrams/`](diagrams/).
 
 ## Components
 

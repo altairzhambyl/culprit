@@ -43,7 +43,7 @@ Honest state of the project at submission time. Legend: ✅ working · 🟡 part
   `max_tokens` handling, brace-safe command templates.
 - Autonomous trigger: `culprit record-nightly`, `culprit watch [--once]` with per-window dedupe and
   approval notification; `scripts/nightly.sh` reproduces the chain offline; Actions example workflow.
-- Test suite: 64 tests (tools, adapters, hooks, scripted model, golden path with cross-process
+- Test suite: 67 tests (tools, adapters, hooks, scripted model, golden path with cross-process
   resume, rejection path, auto-approve, budget, web API, both scenarios, evaluator, hardening,
   automation). Runs in ~3 minutes without credentials.
 - Docs: README, architecture (Mermaid + PNG/SVG), demo script, Devpost copy, build story, AgentCore

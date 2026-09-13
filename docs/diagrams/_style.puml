@@ -1,0 +1,152 @@
+@startuml
+' ---------------------------------------------------------------
+' Shared visual language for docs/diagrams/*.puml
+' Palette is the Culprit dashboard palette (src/culprit/web/static/index.html)
+' ---------------------------------------------------------------
+!$accent  = "#2a78d6"
+!$good    = "#0ca30c"
+!$bad     = "#d03b3b"
+!$warn    = "#b97a00"
+!$text    = "#0b0b0b"
+!$muted   = "#8a8880"
+!$border  = "#dedcd5"
+!$surface = "#fcfcfb"
+
+' soft fills derived from the palette (light theme, near-white canvas)
+!$accentFill = "#eaf2fc"
+!$goodFill   = "#e8f6e8"
+!$badFill    = "#fbeaea"
+!$warnFill   = "#fbf2e0"
+!$greyFill   = "#f4f3ef"
+
+skinparam backgroundColor        #ffffff
+skinparam defaultFontName        Helvetica
+skinparam defaultFontSize        13
+skinparam defaultFontColor       $text
+skinparam shadowing              false
+skinparam roundCorner            12
+skinparam linetype               polyline
+skinparam nodesep                34
+skinparam ranksep                46
+skinparam dpi                    110
+skinparam wrapWidth              210
+skinparam maxMessageSize         220
+
+skinparam TitleFontSize          20
+skinparam TitleFontStyle         bold
+skinparam TitleFontColor         $text
+
+skinparam ArrowColor             $muted
+skinparam ArrowFontColor         $muted
+skinparam ArrowFontSize          11
+skinparam ArrowThickness         1.2
+
+skinparam RectangleBackgroundColor  $surface
+skinparam RectangleBorderColor      $border
+skinparam RectangleBorderThickness  1.2
+skinparam RectangleFontColor        $text
+
+skinparam ComponentBackgroundColor  $surface
+skinparam ComponentBorderColor      $border
+skinparam ComponentFontColor        $text
+
+skinparam DatabaseBackgroundColor   $greyFill
+skinparam DatabaseBorderColor       $border
+
+skinparam NodeBackgroundColor       $surface
+skinparam NodeBorderColor           $border
+skinparam NodeFontColor             $text
+
+skinparam CloudBackgroundColor      $greyFill
+skinparam CloudBorderColor          $border
+
+skinparam ActorBackgroundColor      $accentFill
+skinparam ActorBorderColor          $accent
+skinparam ActorFontColor            $text
+
+skinparam PackageBackgroundColor    #fbfbf9
+skinparam PackageBorderColor        $border
+skinparam PackageFontColor          $muted
+skinparam PackageFontStyle          bold
+skinparam PackageTitleAlignment     left
+
+skinparam LegendBackgroundColor     $surface
+skinparam LegendBorderColor         $border
+skinparam LegendFontSize            12
+skinparam LegendFontColor           $text
+
+skinparam NoteBackgroundColor       $warnFill
+skinparam NoteBorderColor           $muted
+skinparam NoteFontColor             $text
+skinparam NoteFontSize              12
+
+skinparam Sequence {
+  ParticipantBackgroundColor   $surface
+  ParticipantBorderColor       $border
+  ParticipantFontColor         $text
+  ParticipantFontStyle         bold
+  ActorBackgroundColor         $accentFill
+  ActorBorderColor             $accent
+  LifeLineBorderColor          $border
+  LifeLineBackgroundColor      #ffffff
+  ArrowColor                   $muted
+  ArrowFontColor               $text
+  ArrowFontSize                12
+  BoxBackgroundColor           #fbfbf9
+  BoxBorderColor               $border
+  BoxFontColor                 $muted
+  GroupBackgroundColor         $accentFill
+  GroupBorderColor             $accent
+  GroupHeaderFontColor         $accent
+  GroupFontColor               $text
+  DividerBackgroundColor       $greyFill
+  DividerBorderColor           $border
+  DividerFontColor             $muted
+  ReferenceBackgroundColor     $surface
+  ReferenceBorderColor         $border
+}
+<style>
+  ' cell breathing room; `skinparam padding` is deprecated in PlantUML >= 1.2026
+  ' (it stamps a warning banner into the image), so express it as CSS.
+  root {
+    Padding 4
+  }
+  legend {
+    Padding 6
+  }
+  note {
+    Padding 6
+  }
+  package {
+    BackgroundColor #fbfbf9
+    LineColor #dedcd5
+    LineThickness 1.2
+    FontColor #8a8880
+    FontStyle bold
+  }
+  rectangle {
+    LineThickness 1.2
+  }
+  node {
+    BackgroundColor #fcfcfb
+    LineColor #dedcd5
+    LineThickness 1.2
+    FontColor #0b0b0b
+  }
+  cloud {
+    BackgroundColor #f4f3ef
+    LineColor #dedcd5
+    LineThickness 1.2
+  }
+  folder {
+    BackgroundColor #f4f3ef
+    LineColor #dedcd5
+    LineThickness 1.2
+  }
+  database {
+    BackgroundColor #f4f3ef
+    LineColor #dedcd5
+    LineThickness 1.2
+  }
+</style>
+@enduml

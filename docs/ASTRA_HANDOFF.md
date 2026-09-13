@@ -9,7 +9,7 @@ every number comes from a command that ran in this repository.
 # Repository status
 
 **PARTIAL.** The product is complete and verified end to end with the deterministic offline policy
-(64 tests, CLI, dashboard, AgentCore entrypoint contract, autonomous trigger, evaluator). The project's
+(67 tests, CLI, dashboard, autonomous trigger, evaluator; the AgentCore entrypoint is *not* covered). The project's
 central claim — a *real* model solving the unseen fraud-risk regression — is implemented and scored by
 an evaluator that cannot be fooled by a fabricated report, but **has not been executed**: the build
 environment had no route to any AWS endpoint and no real AWS credentials (`docs/evidence/aws-access-attempt.md`).

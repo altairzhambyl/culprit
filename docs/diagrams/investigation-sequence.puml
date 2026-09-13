@@ -1,0 +1,106 @@
+@startuml investigation-sequence
+!include _style.puml
+' notes and messages on this diagram are prose; give them room before wrapping
+skinparam wrapWidth 430
+skinparam maxMessageSize 400
+title One investigation, end to end
+
+actor "Engineer" as H
+participant "RunManager" as RM $accentFill
+participant "Hooks\n<color:$muted>budget · guard · approval</color>" as HK $badFill
+participant "Strands Agent\n<color:$muted>+ model provider</color>" as AG $accentFill
+participant "12 @tools" as T $accentFill
+participant "Metric store" as MS $greyFill
+participant "Target repo\n<color:$muted>git worktrees</color>" as R $greyFill
+participant "GitHub /\nSlack" as GH $greyFill
+
+== Regression detected ==
+H -> RM: investigate <repo>
+note over H, RM $accentFill
+  Also entered by `POST /api/runs` and the AgentCore entrypoint.
+  `culprit watch` (nightly automation) enters here too — and is
+  the only caller that sends the approval request to Slack.
+end note
+activate RM
+RM -> AG: kickoff prompt\n(metric · repo · task)
+activate AG
+AG -> T: get_metric_history
+T -> MS: read nightly history
+MS --> T: <color:$bad>nightly (full config) f1 0.8301 → 0.6624</color>
+T --> AG: good f665601 → bad 5022740
+AG -> T: list_commits(window)
+T -> R: git log
+R --> T: 5 candidate commits
+
+== Bisection ==
+loop until one commit is isolated  ·  BudgetHook caps at CULPRIT_MAX_EXPERIMENTS
+  AG -> T: run_experiment(sha, config)
+  T -> R: git worktree add <sha[:12]>
+  R --> T: metric for that commit
+  T --> AG: <color:$bad>regressed</color> or <color:$good>clean</color>
+  HK -[$warn]-> T: budget + loop guard
+end
+note over AG, R $goodFill
+  recorded churn demo (offline policy): **4** experiments isolate **c249462**
+  — 2 calibration (last good, first bad) + 2 bisection steps.
+  A 5th, below, verifies the fix: **5 experiments in total**.
+end note
+
+AG -> T: show_commit + read_file
+T --> AG: root cause in the diff
+
+== Fix ==
+AG -> T: start_fix
+T -> R: branch culprit/fix-<run_id> + worktree
+AG -> T: edit_file (churn/features.py)
+AG -> T: run_experiment(fix branch)  ← the 5th
+T --> AG: <color:$good>fast config f1 0.7027 → 0.8111 — back to the good-commit value</color>
+AG -> T: write_file (guard test)
+AG -> T: run_tests
+T --> AG: <color:$good>tests pass</color>
+
+group$badFill $badFill  APPROVAL GATE  —  a human must say yes
+  AG -> T: open_pull_request
+  activate T $badFill
+  HK -[$bad]-> RM: **interrupt**\n"culprit-approval:open_pull_request"
+  deactivate T
+  deactivate AG
+  RM -> RM: status = awaiting_human\npersist pending_interrupts
+  RM -[$bad]-> H: approval request\n(dashboard · SSE `interrupt` event)
+  note over H, RM $badFill
+    **The agent stops here.** No PR is opened without a human.
+    The process may exit — the state is on disk.
+  end note
+
+  ... run paused — resume from any process, any time ...
+
+  H -[$good]-> RM: approve / reject
+  activate RM
+  RM -> AG: replay interruptResponse\ninto a fresh Agent (same session)
+  activate AG
+end
+
+== Land & report ==
+alt approved
+  AG -> T: open_pull_request (resumed)
+  T -> GH: PR + notification
+  GH --> T: <color:$good>PR opened</color>
+else rejected
+  HK -[$bad]-> AG: cancel_tool — "do not retry,\nfinish with a summary"
+  note over AG, GH $badFill
+    **No PR.** The fix branch and its worktree stay on disk, reviewable.
+  end note
+end
+RM -> AG: report prompt\nstructured_output_model = IncidentReport
+AG --> RM: IncidentReport
+deactivate AG
+RM -> RM: report.md · report.json\nstatus = completed
+RM --> H: incident report
+deactivate RM
+
+legend right
+|<back:$badFill>    </back>| gate — regression · hooks · human approval |
+|<back:$goodFill>    </back>| verified fix |
+|<back:$accentFill>    </back>| agent path |
+endlegend
+@enduml

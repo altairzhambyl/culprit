@@ -9,7 +9,7 @@ Everything else in the documentation should be read against it.
 
 | What | How | Evidence |
 |---|---|---|
-| The complete agent loop — tools, hooks (budget, loop guard, approval interrupt, tracing), cross-process resume, structured report, PR/notification adapters, CLI, web API, AgentCore entrypoint contract | 64 automated tests driving the *real Strands `Agent`* with the deterministic `ScriptedModel` | `pytest -q` |
+| The complete agent loop — tools, hooks (budget, loop guard, approval interrupt, tracing), cross-process resume, structured report, PR/notification adapters, CLI, web API | 67 automated tests driving the *real Strands `Agent`* with the deterministic `ScriptedModel` | `pytest -q` |
 | Reliability under failure: invalid refs, missing/malformed metrics JSON, experiment timeouts (whole process tree killed), stale worktrees, identical repeated tool calls, global tool cap, dirty working trees left untouched, `--force` refusing to delete non-demo directories, provider preflight (no credentials → run never starts, never falls back to the offline policy) | `tests/test_hardening.py` | `pytest -q tests/test_hardening.py` |
 | Autonomous trigger: nightly record → regression detected → one investigation per good→bad window → human notified only for approval → resume from another process | `tests/test_automation.py`; `scripts/nightly.sh` end to end with the offline policy | `CULPRIT_MODEL_PROVIDER=scripted scripts/nightly.sh` |
 | The churn golden path end to end (bisection → fix → guard test → approval → PR → report) | `culprit evaluate --scenario churn` with `CULPRIT_MODEL_PROVIDER=scripted`; the evaluator re-measures the fix branch and re-runs the project's tests itself | `runs/<id>/evaluation.json` → `success: true` |
@@ -22,7 +22,7 @@ Everything else in the documentation should be read against it.
 |---|---|---|
 | **A real model (Amazon Bedrock Claude) completing the churn golden path** | not executed — the build environment's egress policy denied every AWS endpoint and its only AWS credentials were proxy placeholders (`evidence/aws-access-attempt.md`) | `culprit doctor && culprit demo init --force && culprit investigate demo/churn-model` |
 | **A real model solving the unseen fraud-risk regression** — the central claim of the project | not executed (same blocker) | `culprit evaluate --scenario fraud` (see below) |
-| Amazon Bedrock AgentCore Runtime deployment | entrypoint contract exercised locally only; deployment blocked by the same egress policy | `docs/deploy-agentcore.md` |
+| Amazon Bedrock AgentCore Runtime — deployment **and** the `/invocations` + `/ping` entrypoint contract | not executed. `culprit.agentcore_app` is code-read only: no test references it (`grep -rn agentcore tests/` → nothing), and `bedrock-agentcore` is not in the `dev` extra, so CI never imports it. Deployment is blocked by the same egress policy | `pip install ".[agentcore]" && python -m culprit.agentcore_app`, then `docs/deploy-agentcore.md` |
 | Scheduled GitHub Actions example (`.github/workflows/nightly-culprit.yml`) | YAML validated, never executed | add to an ML repository with AWS OIDC credentials |
 | GitHub pull-request adapter against a live repository, Slack webhook adapter | implemented, not executed | set `GITHUB_TOKEN` / `SLACK_WEBHOOK_URL` and re-run an investigation |
 | Timing / token cost of a real run | unknown | `evaluation.json` records both |

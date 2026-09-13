@@ -1,0 +1,91 @@
+@startuml deployment
+!include _style.puml
+skinparam linetype ortho
+skinparam nodesep 24
+skinparam ranksep 40
+title Culprit — deployment & self-hosting
+
+actor "Engineer" as H $accentFill
+rectangle "**Reverse proxy** — optional\n<color:$muted>TLS · auth in front of the dashboard</color>\n<color:$muted>must NOT buffer: SSE needs</color>\n<color:$muted>proxy_buffering off / no flush delay</color>" as PROXY $warnFill
+rectangle "**Credentials & config**\n<color:$muted>.env or process env</color>\n**CULPRIT_MODEL_PROVIDER** — scripted (offline)\nbedrock · anthropic · openai\nAWS creds + AWS_REGION\nANTHROPIC_API_KEY · OPENAI_API_KEY\nGITHUB_TOKEN · SLACK_WEBHOOK_URL\nCULPRIT_API_TOKEN · CULPRIT_DEMO_ONLY\nCULPRIT_RUNS_DIR · CULPRIT_HOST / _PORT" as ENV $greyFill
+
+node "**A.  Local / self-hosted**" as LOCAL $goodFill {
+  rectangle ".venv — Python 3.10–3.12" as VENV
+  rectangle "**culprit serve**\n<color:$muted>127.0.0.1:8000 · CULPRIT_HOST / _PORT</color>" as SERVE $goodFill
+  folder "**CULPRIT_RUNS_DIR**\n<color:$muted>./runs — every run's state</color>" as RUNS
+  folder "**Target repository**\n<color:$muted>full git history · worktrees</color>" as REPO
+}
+
+node "**B.  Container images**" as IMG $greyFill {
+  rectangle "**docker compose** — recommended\n<color:$muted>publishes 127.0.0.1:8000 only</color>\n<color:$muted>named volume culprit-data → /data</color>" as COMPOSE $goodFill
+  rectangle "`Dockerfile.dashboard`\n<color:$muted>culprit serve · 0.0.0.0:**8000**</color>\n<color:$muted>non-root · HEALTHCHECK</color>" as CDASH $goodFill
+  folder "**/data**  — mount a volume\n<color:$muted>CULPRIT_RUNS_DIR=/data/runs</color>" as CVOL $goodFill
+  rectangle "`Dockerfile`  — AgentCore only\n<color:$muted>linux/arm64 · **EXPOSE 8080**</color>\n<color:$muted>CMD culprit.agentcore_app</color>" as CIMG $warnFill
+  folder "/tmp/culprit/runs\n<color:$muted>ephemeral — no VOLUME</color>" as CTMP $warnFill
+}
+
+node "**C.  Bedrock AgentCore Runtime**" as ACR $greyFill {
+  rectangle "image from ECR\n<color:$muted>POST /invocations · GET /ping</color>" as ACEP $warnFill
+}
+
+cloud "**Amazon Bedrock**\n<color:$muted>Claude — when CULPRIT_MODEL_PROVIDER=bedrock</color>" as BEDROCK
+cloud "**GitHub API** · **Slack webhook**" as SAAS
+
+H -down-> PROXY : https
+H -down-> SERVE : browser :8000
+PROXY -down-> SERVE
+ENV -down-> SERVE
+VENV -down-> SERVE
+SERVE -down-> RUNS
+SERVE -down-> REPO
+COMPOSE -down-> CDASH
+CDASH -down-> CVOL
+CIMG -down-> CTMP
+ENV -down-> CDASH
+LOCAL .[$muted,dashed]down.> IMG : docker build
+' anchored on the AgentCore image itself, not on node B: the label must not land
+' on the dashboard image's volume edge (see docs/diagrams/README.md)
+CIMG .[$muted,dashed]down.> ACEP : ECR push + agentcore deploy
+COMPOSE -[hidden]right- CIMG
+ACEP .[$muted,dashed]down.> BEDROCK
+SERVE .[$muted,dashed]down.> BEDROCK
+SERVE .[$muted,dashed]down.> SAAS : PR · notification
+
+note right of LOCAL $goodFill
+  **VERIFIED HERE** — offline, provider=scripted
+  the full test suite passes (`pytest -q`)
+  `culprit serve` binds 127.0.0.1:8000
+  churn golden path incl. resume after the interrupt
+end note
+
+note bottom of SERVE $badFill
+  **SECURITY** — CULPRIT_API_TOKEN guards only the 3 POST routes.
+  Every GET (run list, SSE stream, report.md, pull_request.md,
+  trace) stays public even with the token set. With no token, anyone
+  who can POST /api/runs runs arbitrary shell commands.
+  → docs/self-hosting.md#security
+end note
+
+note right of IMG $goodFill
+  `Dockerfile.dashboard` and the compose stack
+  **WERE BUILT AND RUN HERE** — offline provider,
+  churn golden path to `completed` inside the container
+  (docs/self-hosting.md#verification-status).
+  The top-level `Dockerfile` — the AgentCore image —
+  was **NOT** built; it does not serve the dashboard.
+end note
+
+note right of ACR $warnFill
+  **NOT EXECUTED** (docs/validation.md): the ECR push,
+  the AgentCore deployment, a real model run,
+  live GitHub + Slack adapters, the reverse proxy configs.
+end note
+
+legend right
+|<back:$goodFill>    </back>| built / executed locally in this repo |
+|<back:$warnFill>    </back>| implemented or documented, not executed here |
+|<back:$greyFill>    </back>| infrastructure / configuration |
+|<back:$badFill>    </back>| security caveat — read before exposing |
+| <color:$muted>- - -</color> | unverified path |
+endlegend
+@enduml

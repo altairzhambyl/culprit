@@ -556,6 +556,21 @@ def serve(
     port = port or settings.port
     url = f"http://{host}:{port}"
     console.print(f"[bold]Culprit dashboard[/] → {url}   (model: {settings.describe_model()})")
+    # Binding off-loopback publishes an endpoint that starts investigations, and an investigation
+    # runs the target repository's experiment_command — an arbitrary shell command. Say so loudly.
+    if host not in {"127.0.0.1", "localhost", "::1"} and not (settings.api_token and settings.demo_only):
+        missing = [
+            name
+            for name, ok in (
+                ("CULPRIT_API_TOKEN", bool(settings.api_token)),
+                ("CULPRIT_DEMO_ONLY", settings.demo_only),
+            )
+            if not ok
+        ]
+        console.print(
+            f"[bold yellow]⚠ Reachable on {host} without {' and '.join(missing)}.[/] Anyone who can reach this "
+            "port can make Culprit run an arbitrary repository's experiment_command. See docs/self-hosting.md#security."
+        )
     if open_browser:
         webbrowser.open(url)
     uvicorn.run("culprit.web.app:app", host=host, port=port, log_level="warning")

@@ -10,8 +10,8 @@ from __future__ import annotations
 import difflib
 import json
 import os
-import shutil
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -35,7 +35,7 @@ def quote_arg(value: str) -> str:
     """Quote a template argument for the platform shell used by subprocess."""
     if os.name == "nt":
         quoted = subprocess.list2cmdline([value])
-        if not quoted.startswith('"') and any(c in value for c in '&|<>^()'):
+        if not quoted.startswith('"') and any(c in value for c in "&|<>^()"):
             quoted = '"' + quoted + '"'
         return quoted
     return shlex.quote(value)
@@ -247,7 +247,8 @@ class InvestigationTools:
             if os.name == "nt":
                 subprocess.run(
                     ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                    capture_output=True, timeout=10,
+                    capture_output=True,
+                    timeout=10,
                 )
                 if proc.poll() is None:
                     proc.kill()
@@ -298,8 +299,13 @@ class InvestigationTools:
             for prior in self.ctx.record.experiments:
                 if prior.sha == sha and prior.config == config and prior.status == "ok":
                     cached = prior.model_copy(update={"cached": True, "note": note or prior.note})
-                    self.ctx.emit("experiment", cached.model_dump())
-                    return cached.model_dump()
+                    payload = cached.model_dump()
+                    # Same shape as a fresh run below: consumers (the dashboard) read `value`, and a
+                    # cache hit that omitted it used to shadow the real measurement for this commit.
+                    payload["tracked_metric"] = project.metric
+                    payload["value"] = cached.metrics.get(project.metric)
+                    self.ctx.emit("experiment", payload)
+                    return payload
 
         self.ctx.emit("experiment_start", {"ref": ref, "sha": sha[:12], "config": config, "note": note})
         # Metrics go outside the worktree so they never end up in the fix branch's commit.

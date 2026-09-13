@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -25,9 +26,13 @@ manager = RunManager(get_settings())
 
 
 def require_token(authorization: str | None = Header(default=None)) -> None:
-    """Protect mutating endpoints when CULPRIT_API_TOKEN is set (for publicly hosted demos)."""
+    """Protect mutating endpoints when CULPRIT_API_TOKEN is set (for publicly hosted demos).
+
+    Read endpoints are deliberately left open so that report.md / pull_request.md links work in a
+    plain browser tab. docs/self-hosting.md#security spells out what that does and does not cover.
+    """
     token = manager.settings.api_token
-    if token and authorization != f"Bearer {token}":
+    if token and not secrets.compare_digest(authorization or "", f"Bearer {token}"):
         raise HTTPException(401, "missing or invalid API token")
 
 
@@ -139,9 +144,7 @@ def start_run(req: StartRequest) -> dict[str, Any]:
             )
         req.auto_approve = False
     try:
-        record = manager.create_run(
-            req.repo, metric=req.metric, task=req.task, auto_approve=req.auto_approve
-        )
+        record = manager.create_run(req.repo, metric=req.metric, task=req.task, auto_approve=req.auto_approve)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc))
     manager.start(record.run_id, background=True)
@@ -160,8 +163,19 @@ def get_events(run_id: str, after: int = 0) -> list[dict[str, Any]]:
 
 
 @app.get("/api/runs/{run_id}/stream")
-def stream_events(run_id: str, after: int = 0) -> StreamingResponse:
+def stream_events(
+    run_id: str,
+    after: int = 0,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+) -> StreamingResponse:
     _record_payload(run_id)
+    # An EventSource that reconnects on its own replays the ORIGINAL url, so `after` is stale by then.
+    # The browser sends the last id it saw in Last-Event-ID; trust it when it is ahead of the query.
+    if last_event_id:
+        try:
+            after = max(after, int(last_event_id))
+        except ValueError:
+            log.warning("ignoring non-numeric Last-Event-ID %r for run %s", last_event_id, run_id)
 
     def generate() -> Iterator[str]:
         for event in manager.subscribe(run_id, after_seq=after, timeout=10.0):

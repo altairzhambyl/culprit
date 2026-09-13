@@ -1,0 +1,23 @@
+# Keep the build context small: only pyproject/README/LICENSE/src are ever COPYed.
+.git
+.github
+.venv
+venv
+runs
+demo
+docs
+examples
+scripts
+tests
+config
+.pytest_cache
+.ruff_cache
+.ultima
+**/__pycache__
+*.pyc
+.env
+.env.*
+!.env.example
+Dockerfile
+Dockerfile.dashboard
+docker-compose.yml
